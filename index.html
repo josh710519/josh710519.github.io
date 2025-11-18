@@ -1,0 +1,1678 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <link rel="manifest" href="/manifest.json">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#FF9800">
+    <title>Gemini AI 熱量追蹤器</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 Chart.js (用於圖表) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 使用 Inter 字體 -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f9;
+        }
+        .loading-dot {
+            animation: bounce 1s infinite;
+        }
+        .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+        .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+        }
+        /* 彈窗背景 */
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.6);
+            transition: opacity 0.3s ease;
+        }
+        /* 自訂核取方塊樣式 */
+        .custom-checkbox:checked {
+            background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+            background-size: 100% 100%;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 md:p-8">
+
+    <div id="app" class="max-w-xl mx-auto">
+        <header class="mb-8 p-4 bg-white rounded-xl shadow-lg">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h1 class="text-3xl font-extrabold text-blue-700">🍽️ Gemini 熱量分析</h1>
+                    <p class="text-gray-600">您的 AI 營養管理助手。</p>
+                </div>
+                <button onclick="showProfileModal(true)" class="p-3 bg-gray-100 rounded-full hover:bg-gray-200 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-600"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                </button>
+            </div>
+            
+            <!-- Google 登入區塊 -->
+            <div id="authSection" class="border-t pt-4">
+                <!-- 顯示使用者名稱和登出按鈕 (登入後) -->
+                <div id="userInfo" class="hidden flex items-center justify-between">
+                    <span id="userDisplayName" class="text-sm font-medium text-gray-700">歡迎！</span>
+                    <button onclick="signOutUser()" class="text-sm font-medium text-red-500 hover:text-red-700">登出</button>
+                </div>
+                <!-- 顯示 Google 登入按鈕 (登出時) -->
+                <button id="googleSignInButton" onclick="signInWithGoogle()" 
+                        class="w-full py-2 px-4 rounded-xl font-bold text-white bg-gray-700 hover:bg-gray-800 transition duration-150 shadow-md flex items-center justify-center">
+                    <svg class="w-5 h-5 mr-2" fill="white" viewBox="0 0 48 48"><path d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"></path></svg>
+                    使用 Google 登入
+                </button>
+                <p id="googleSignInMessage" class="text-xs text-gray-500 text-center mt-2"></p>
+            </div>
+        </header>
+
+        <!-- 儀表板區塊 -->
+        <section id="dashboardSection" class="mb-8 p-6 bg-white rounded-xl shadow-lg">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">今日儀表板</h2>
+            
+            <!-- 剩餘熱量顯示 -->
+            <div class="text-center mb-6 p-6 bg-blue-50 rounded-lg shadow-inner">
+                <p class="text-sm font-medium text-blue-600">今日剩餘熱量</p>
+                <p id="remainingCalories" class="text-5xl font-extrabold text-blue-800">...</p>
+                <div class="flex justify-between text-xs text-gray-600 mt-2">
+                    <span id="todayTotal" class="text-red-500">已攝取: ...</span>
+                    <span id="calorieTarget" class="text-green-600">每日目標: ...</span>
+                </div>
+            </div>
+
+            <!-- 熱量圖表 -->
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">熱量趨勢 (過去 7 天)</h3>
+            <p class="text-sm text-gray-500 mb-3">每日長條圖由當天攝取的「每餐」堆疊而成。</p>
+            <div id="chartContainer" class="relative h-64">
+                <canvas id="calorieChart"></canvas>
+            </div>
+        </section>
+
+        <!-- 檔案上傳區塊 -->
+        <section class="mb-8 p-6 bg-white rounded-xl shadow-lg border-2 border-dashed border-blue-200">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">步驟 1: 上傳或拍攝餐點照片</h2>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <button onclick="document.getElementById('cameraInput').click()" 
+                        class="w-full py-3 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition duration-150 shadow-md flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle></svg>
+                    開啟相機
+                </button>
+                <button onclick="document.getElementById('fileInput').click()" 
+                        class="w-full py-3 px-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition duration-150 shadow-md flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    從相簿選取
+                </button>
+            </div>
+
+            <input type="file" id="cameraInput" accept="image/*" capture="camera" class="hidden" onchange="previewImage(event)">
+            <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="previewImage(event)">
+
+            <div id="imagePreviewContainer" class="mt-6 hidden">
+                <p class="text-gray-500 mb-2 text-sm">圖片預覽 (已壓縮)：</p>
+                <img id="imagePreview" class="rounded-lg max-h-64 w-auto shadow-md mx-auto" alt="上傳圖片預覽">
+            </div>
+            <button onclick="analyzeFood()" id="analyzeButton" 
+                class="mt-6 w-full py-3 px-4 rounded-xl font-bold text-white bg-green-500 hover:bg-green-600 transition duration-150 shadow-md disabled:opacity-50"
+                disabled>
+                步驟 2: 分析食物熱量
+            </button>
+        </section>
+
+        <!-- 分析結果區塊 -->
+        <section id="resultsSection" class="mb-8 p-6 bg-white rounded-xl shadow-lg hidden">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                <span class="mr-2">📝 AI 分析結果</span>
+                <span id="loadingIndicator" class="hidden">
+                    <span class="loading-dot w-2 h-2 bg-blue-500 rounded-full inline-block mx-0.5"></span>
+                    <span class="loading-dot w-2 h-2 bg-blue-500 rounded-full inline-block mx-0.5"></span>
+                    <span class="loading-dot w-2 h-2 bg-blue-500 rounded-full inline-block mx-0.5"></span>
+                </span>
+            </h2>
+
+            <div id="totalCaloriesDisplay" class="bg-blue-50 p-3 rounded-lg font-bold text-lg text-blue-700 mb-4 shadow-inner hidden">
+                總估計熱量: <span id="totalCaloriesValue">0</span> kcal
+            </div>
+
+            <div id="analysisResult" class="space-y-2"></div>
+            
+            <div id="adviceContainer" class="mt-6 hidden">
+                <button onclick="getNutritionalAdvice()" id="getAdviceButton" 
+                    class="w-full py-3 px-4 rounded-xl font-bold text-white bg-purple-500 hover:bg-purple-600 transition duration-150 shadow-md disabled:opacity-50">
+                    ✨ 取得 AI 營養建議 (根據勾選項目)
+                </button>
+                <div id="adviceResult" class="mt-3 hidden p-4 bg-gray-50 rounded-lg shadow-inner"></div>
+            </div>
+            <button onclick="saveMeal()" id="saveButton"
+                class="mt-6 w-full py-3 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition duration-150 shadow-md disabled:opacity-50">
+                步驟 3: 儲存勾選的餐點
+            </button>
+            <!-- *** 新增：地點輸入欄位 *** -->
+            <div class="mt-4">
+                <label for="mealLocation" class="block text-sm font-medium text-gray-700">📍 在哪裡用餐？ (選填)</label>
+                <input type="text" id="mealLocation" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="例如：家裡 或 巷口牛肉麵">
+            </div>
+            <p id="saveMessage" class="text-sm text-center mt-2 text-gray-500"></p>
+        </section>
+
+        <!-- 歷史記錄區塊 -->
+        <section class="p-6 bg-white rounded-xl shadow-lg">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">📊 歷史用餐記錄 (點擊可編輯)</h2>
+            <div id="pastMealsList" class="space-y-4">
+                <p id="historyLoading" class="text-center text-gray-500">載入中...</p>
+            </div>
+        </section>
+        
+        <div id="messageBox" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-red-500 text-white rounded-lg shadow-xl hidden transition duration-300 z-50"></div>
+    </div>
+
+    <!-- 個人資料彈窗 (Modal) -->
+    <div id="profileModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+        <div class="bg-white w-full max-w-md p-6 rounded-2xl shadow-xl transform transition-all max-h-[90vh] flex flex-col">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">個人資料</h2>
+            <div class="overflow-y-auto">
+                <p class="text-sm text-gray-600 mb-6">請提供您的資訊，以便我們計算您每日的建議熱量攝取。</p>
+                <form id="profileForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">暱稱 (公開顯示)</label>
+                        <input type="text" id="nickname" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="例如：美食家小王">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">性別</label>
+                        <select id="gender" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="male">男性</option>
+                            <option value="female">女性</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">年齡</label>
+                        <input type="number" id="age" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="例如：30">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">身高 (cm)</label>
+                        <input type="number" id="height" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="例如：170">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">體重 (kg)</label>
+                        <input type="number" id="weight" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="例如：65">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">活動量</label>
+                        <select id="activityLevel" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="1.2">久坐 (辦公室工作)</option>
+                            <option value="1.375">輕度活動 (每週運動1-3天)</option>
+                            <option value="1.55">中度活動 (每週運動3-5天)</option>
+                            <option value="1.725">高度活動 (每週運動6-7天)</option>
+                            <option value="1.9">極度活動 (體力勞動或專業運動員)</option>
+                        </select>
+                    </div>
+                    <div class="flex justify-end pt-4 space-x-3">
+                        <button type="button" id="closeProfileModalButton" class="py-2 px-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">稍後</button>
+                        <button type="button" onclick="saveUserProfile()" class="py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">儲存</button>
+                    </div>
+
+                    <!-- Delete Account Section -->
+                    <div id="deleteAccountSection" class="mt-6 pt-4 border-t border-red-300 hidden">
+                        <h3 class="text-lg font-semibold text-red-700">危險區域</h3>
+                        <p class="text-sm text-gray-600 mt-1 mb-3">刪除您的帳號將會永久移除所有用餐記錄和個人資料，此操作無法復原。</p>
+                        <button type="button" onclick="deleteUserAccount()" class="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold">
+                            永久刪除我的帳號
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 資料衝突彈窗 (Modal) -->
+    <div id="mergeModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+        <div class="bg-white w-full max-w-md p-6 rounded-2xl shadow-xl transform transition-all">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">偵測到資料衝突</h2>
+            <p class="text-sm text-gray-600 mb-6">您的 Google 帳號已被使用，這代表您已在**另一台裝置**上登入過。</p>
+            <p class="text-sm text-gray-600 mb-6">您希望如何處理**目前這台裝置**上的「匿名」用餐記錄？</Gemoji></p>
+            <div class="space-y-3">
+                <button type="button" onclick="overwriteWithAnonymousData()" class="w-full py-3 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">
+                    ✅ 以本機資料覆蓋雲端
+                    <span class="block text-xs font-normal">您在 Google 帳號的「舊資料」將被刪除</span>
+                </button>
+                <button type="button" onclick="discardAnonymousData()" class="w-full py-3 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold">
+                    ❌ 拋棄本機記錄 (載入雲端)
+                    <span class="block text-xs font-normal">只載入您 Google 帳號的雲端記錄</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- *** 新增：編輯餐點彈窗 (Modal) *** -->
+    <div id="editMealModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+        <div class="bg-white w-full max-w-md p-6 rounded-2xl shadow-xl transform transition-all max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-900">編輯餐點記錄</h2>
+                <button type="button" id="closeEditModalButton" class="p-2 text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            
+            <div class="overflow-y-auto space-y-4">
+                <!-- 放大圖片 -->
+                <img id="editMealImage" src="https://placehold.co/400x300/F0F0F0/AAA?text=Loading..." alt="餐點圖片" class="w-full h-48 object-cover rounded-lg mb-4">
+                
+                <!-- *** 新增：編輯地點欄位 *** -->
+                <div class="mb-4">
+                    <label for="editMealLocation" class="block text-sm font-medium text-gray-700">📍 地點</label>
+                    <div class="flex space-x-2">
+                        <input type="text" id="editMealLocation" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="編輯地點">
+                        <button onclick="updateMealLocation()" class="mt-1 px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm font-medium">更新</button>
+                    </div>
+                </div>
+
+                <!-- 可編輯的食物細項 -->
+                <h3 class="text-lg font-semibold text-gray-700">食物細項</h3>
+                <div id="editItemsList" class="space-y-3">
+                    <!-- JS 會動態填入這裡 -->
+                    <p class="text-center text-gray-500">正在載入食物細項...</p>
+                </div>
+            </div>
+            
+            <div class="mt-6 pt-4 border-t border-gray-200">
+                <button type="button" onclick="deleteEntireMeal()" class="w-full py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold">
+                    刪除整筆餐點記錄
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Firebase SDK 引入 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            onAuthStateChanged,
+            GoogleAuthProvider,
+            signInWithPopup,
+            signInWithCredential, 
+            signOut,
+            updateProfile,
+            deleteUser
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            addDoc, 
+            onSnapshot, 
+            collection, 
+            query, 
+            serverTimestamp, 
+            setLogLevel, 
+            getDoc, 
+            setDoc, 
+            orderBy,
+            getDocs, 
+            writeBatch,
+            deleteDoc,
+            where,
+            updateDoc
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 全域變數
+        let db, auth, userId;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        // (已填入您提供的 Firebase 專案設定)
+        const firebaseConfig = {
+          apiKey: "AIzaSyCp5EOEhA00zAQ_eyTqPW3h6db8fLuApks",
+          authDomain: "foodcc-47d21.firebaseapp.com",
+          projectId: "foodcc-47d21",
+          storageBucket: "foodcc-47d21.firebasestorage.app",
+          messagingSenderId: "753714580843",
+          appId: "1:753714580843:web:7557b8179c4367389ed02e",
+          measurementId: "G-9V9LJ5Y751"
+        };
+        
+        let allAnalyzedItems = [];
+        let currentMealData = [];
+        let currentImageBase64 = null; 
+        let currentImageMimeType = null;
+        let currentFileName = 'AI分析餐點'; 
+
+        let userProfile = null;
+        let dailyCalorieTarget = 2000;
+        let todaysTotalCalories = 0;
+        let myChart = null;
+
+        let anonymousUserIdBeforeSignIn = null;
+        let googleCredentialForMerge = null; 
+        let mealSubscription = null; 
+        let isHandlingConflict = false; 
+        let currentEditingMealId = null; // *** 新增：用於編輯彈窗 ***
+
+        setLogLevel('Debug');
+
+        // ==== 輔助函數：訊息提示 ====
+        function showMessage(msg, isError = true) {
+            const box = document.getElementById('messageBox');
+            box.textContent = msg;
+            box.className = `fixed bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 text-white rounded-lg shadow-xl transition duration-300 z-50 ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+            box.classList.remove('hidden');
+            setTimeout(() => {
+                box.classList.add('hidden');
+            }, 3000);
+        }
+
+        // ==== 隨機顏色函數 ====
+        let colorHue = 0; 
+        function getRandomColor() {
+            colorHue = (colorHue + 40) % 360; 
+            const saturation = 70 + Math.random() * 20; 
+            const lightness = 50 + Math.random() * 10; 
+            return `hsla(${colorHue}, ${saturation}%, ${lightness}%, 0.7)`;
+        }
+
+        // ==== 圖片壓縮函數 ====
+        function resizeImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 1024;
+                        const scaleSize = MAX_WIDTH / img.width;
+                        let newWidth, newHeight;
+                        if (img.width > MAX_WIDTH) {
+                            newWidth = MAX_WIDTH;
+                            newHeight = img.height * scaleSize;
+                        } else {
+                            newWidth = img.width;
+                            newHeight = img.height;
+                        }
+                        canvas.width = newWidth;
+                        canvas.height = newHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, newWidth, newHeight);
+                        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+                        const mimeType = 'image/jpeg';
+                        resolve({
+                            base64: compressedBase64.split(',')[1],
+                            mimeType: mimeType,
+                            displayUrl: compressedBase64 
+                        });
+                    };
+                    img.onerror = (error) => reject(error);
+                };
+                reader.onerror = (error) => reject(error);
+            });
+        }
+
+        // ==== Gemini API 呼叫 (圖像) ====
+        async function callGeminiAPI(base64Image, mimeType) {
+            const userQuery = "請詳細分析這張圖片中的所有食物。只回傳 JSON 格式的結果，不包含任何說明或 Markdown 語法。";
+            const systemPrompt = "你是一位精準的營養學家。根據圖片，識別所有食物。對於每個食物，估算其名稱和總熱量（kcal）以及估計份量（以公克 'g' 為單位）。";
+            
+            // (已填入您提供的金鑰)
+            const apiKey = "AIzaSyCuoQv7FoImHfZ9G7pE0DNKLQnGkmkMgBQ"; 
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const responseSchema = {
+                type: "OBJECT",
+                properties: {
+                    foodItems: {
+                        type: "ARRAY",
+                        description: "食物細項清單",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                name: { type: "STRING", description: "食物名稱" },
+                                estimated_calories: { type: "NUMBER", description: "估計熱量 (kcal)" },
+                                estimated_quantity_g: { type: "NUMBER", description: "估計份量 (g)" }
+                            },
+                            required: ["name", "estimated_calories", "estimated_quantity_g"]
+                        }
+                    }
+                },
+                required: ["foodItems"]
+            };
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: [
+                        { text: userQuery },
+                        {
+                            inlineData: {
+                                mimeType: mimeType, 
+                                data: base64Image
+                            }
+                        }
+                    ]
+                }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema
+                },
+            };
+            
+            const maxRetries = 3;
+            let lastError = null;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) {
+                        const errorBody = await response.json();
+                        throw new Error(`API 錯誤狀態碼: ${response.status}. 訊息: ${errorBody.error.message}`);
+                    }
+                    const result = await response.json();
+                    const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!jsonText) throw new Error("API 回傳結果結構不正確或為空。");
+                    return JSON.parse(jsonText);
+                } catch (error) {
+                    lastError = error;
+                    console.error(`Gemini API 嘗試 ${attempt} 失敗:`, error);
+                    if (attempt < maxRetries) await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+                }
+            }
+            throw new Error(`Gemini API 呼叫失敗，已重試 ${maxRetries} 次。最後錯誤: ${lastError.message}`);
+        }
+        
+        // ==== Gemini API 呼叫 (文字) ====
+        async function callGeminiTextAPI(mealData) {
+            if (!mealData || mealData.length === 0) {
+                return "您沒有勾選任何食物，無法提供建議。";
+            }
+            const mealJson = JSON.stringify(mealData);
+            const userQuery = `這是我的一餐食物清單：${mealJson}。請根據這個清單，用繁體中文提供一段簡短（約 2-3 句）的營養總結，並給出一個具體的改進建議。`;
+            const systemPrompt = "你是一位友善且鼓勵人心的營養師。你的回覆應該簡潔、正面，並專注於幫助使用者做出更健康的選擇。";
+            
+            // (已填入您提供的金鑰)
+            const apiKey = "AIzaSyCuoQv7FoImHfZ9G7pE0DNKLQnGkmkMgBQ"; 
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: [{ text: userQuery }]
+                }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+                generationConfig: {
+                    responseMimeType: "text/plain",
+                },
+            };
+            
+            const maxRetries = 3;
+            let lastError = null;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) {
+                        const errorBody = await response.json();
+                        throw new Error(`Text API 錯誤狀態碼: ${response.status}. 訊息: ${errorBody.error.message}`);
+                    }
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) throw new Error("Text API 回傳結果結構不正確或為空。");
+                    return text.trim();
+                } catch (error) {
+                    lastError = error;
+                    console.error(`Gemini Text API 嘗試 ${attempt} 失敗:`, error);
+                    if (attempt < maxRetries) await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+                }
+            }
+            throw new Error(`Gemini Text API 呼叫失敗，已重試 ${maxRetries} 次。最後錯誤: ${lastError.message}`);
+        }
+
+        // ==== UI 核心函數：預覽圖片 ====
+        window.previewImage = async function(event) { 
+            const input = event.target; 
+            const preview = document.getElementById('imagePreview');
+            const container = document.getElementById('imagePreviewContainer');
+            const analyzeButton = document.getElementById('analyzeButton');
+
+            currentImageBase64 = null;
+            currentImageMimeType = null;
+            allAnalyzedItems = [];
+            currentMealData = [];
+
+            if (input.files && input.files[0]) {
+                const file = input.files[0];
+                currentFileName = file.name.split('.')[0] || 'AI分析餐點'; 
+                
+                try {
+                    const compressedData = await resizeImage(file);
+                    preview.src = compressedData.displayUrl; 
+                    container.classList.remove('hidden');
+                    analyzeButton.disabled = false;
+                    currentImageBase64 = compressedData.base64;
+                    currentImageMimeType = compressedData.mimeType;
+                    showMessage('圖片壓縮完成！', false);
+                } catch (error) {
+                    console.error("圖片壓縮失敗:", error);
+                    showMessage("圖片處理失敗，請嘗試另一張圖片。", true);
+                    container.classList.add('hidden');
+                    preview.src = '';
+                    analyzeButton.disabled = true;
+                }
+            } else {
+                container.classList.add('hidden');
+                preview.src = '';
+                analyzeButton.disabled = true;
+            }
+            
+            document.getElementById('analysisResult').innerHTML = ''; 
+            document.getElementById('totalCaloriesDisplay').classList.add('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+            document.getElementById('saveButton').disabled = true;
+            document.getElementById('saveMessage').textContent = '';
+            document.getElementById('adviceContainer').classList.add('hidden');
+            document.getElementById('adviceResult').classList.add('hidden');
+            document.getElementById('adviceResult').innerHTML = '';
+        }
+        
+        // ==== UI 核心函數：分析食物 ====
+        window.analyzeFood = async function() {
+            const analyzeButton = document.getElementById('analyzeButton');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const resultDiv = document.getElementById('analysisResult');
+            const resultsSection = document.getElementById('resultsSection');
+            
+            document.getElementById('adviceContainer').classList.add('hidden');
+            document.getElementById('adviceResult').classList.add('hidden');
+            document.getElementById('adviceResult').innerHTML = '';
+
+            if (!currentImageBase64 || !currentImageMimeType) {
+                return showMessage('請先上傳食物圖片並等待壓縮完成！');
+            }
+            
+            analyzeButton.disabled = true;
+            loadingIndicator.classList.remove('hidden');
+            resultsSection.classList.remove('hidden');
+            resultDiv.innerHTML = '<p class="text-center text-blue-500">AI 正在分析中，請稍候...</p>';
+            allAnalyzedItems = [];
+            currentMealData = [];
+            document.getElementById('totalCaloriesDisplay').classList.add('hidden');
+            
+            try {
+                const analysisData = await callGeminiAPI(currentImageBase64, currentImageMimeType);
+                
+                if (!analysisData || !analysisData.foodItems || analysisData.foodItems.length === 0) {
+                    resultDiv.innerHTML = '<p class="text-red-500">AI 無法識別圖片中的食物細項。請嘗試另一張圖片。</p>';
+                    document.getElementById('saveButton').disabled = true;
+                    return;
+                }
+                
+                allAnalyzedItems = analysisData.foodItems;
+                
+                let html = allAnalyzedItems.map((item, index) => {
+                    const calories = item.estimated_calories || 0;
+                    return `
+                        <div class="p-3 border border-gray-100 rounded-lg shadow-sm flex items-center bg-gray-50 space-x-3">
+                            <input type="checkbox" id="item-${index}" 
+                                   class="form-checkbox h-5 w-5 rounded text-blue-600 border-gray-300 focus:ring-blue-500 custom-checkbox" 
+                                   data-index="${index}" 
+                                   onchange="updateSelectedMealData()" 
+                                   checked>
+                            <label for="item-${index}" class="flex-grow">
+                                <p class="font-bold text-gray-700">${item.name} (${item.estimated_quantity_g} g)</p>
+                                <p class="text-sm text-red-500">${calories.toFixed(0)} kcal</p>
+                            </label>
+                        </div>
+                    `;
+                }).join('');
+                
+                resultDiv.innerHTML = html;
+                updateSelectedMealData(); 
+                
+                document.getElementById('totalCaloriesDisplay').classList.remove('hidden');
+                document.getElementById('saveButton').disabled = false;
+                document.getElementById('adviceContainer').classList.remove('hidden'); 
+                showMessage('分析完成！請勾選您吃下的食物', false);
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="text-red-500">分析失敗: ${error.message}</p>`;
+                document.getElementById('saveButton').disabled = true;
+            } finally {
+                analyzeButton.disabled = false;
+                loadingIndicator.classList.add('hidden');
+            }
+        }
+
+        // ==== UI 核心函數：更新勾選的餐點資料與總熱量 ====
+        window.updateSelectedMealData = function() {
+            currentMealData = [];
+            let totalCalories = 0;
+            
+            allAnalyzedItems.forEach((item, index) => {
+                const checkbox = document.getElementById(`item-${index}`);
+                if (checkbox && checkbox.checked) {
+                    currentMealData.push(item);
+                    totalCalories += (item.estimated_calories || 0);
+                }
+            });
+
+            document.getElementById('totalCaloriesValue').textContent = totalCalories.toFixed(0);
+            
+            const nothingSelected = currentMealData.length === 0;
+            document.getElementById('saveButton').disabled = nothingSelected;
+            document.getElementById('getAdviceButton').disabled = nothingSelected;
+        }
+
+        // ==== UI 核心函數：取得 AI 建議 ====
+        window.getNutritionalAdvice = async function() {
+             if (!currentMealData || currentMealData.length === 0) {
+                return showMessage('請至少勾選一個食物項目。');
+            }
+            const adviceButton = document.getElementById('getAdviceButton');
+            const adviceResultDiv = document.getElementById('adviceResult');
+            adviceButton.disabled = true;
+            adviceResultDiv.classList.remove('hidden');
+            adviceResultDiv.innerHTML = '<p class="text-center text-purple-500">✨ AI 營養師正在思考中...</p>';
+            try {
+                const adviceText = await callGeminiTextAPI(currentMealData);
+                adviceResultDiv.innerHTML = `<p class="text-gray-800">${adviceText.replace(/\n/g, '<br>')}</p>`;
+            } catch (error) {
+                adviceResultDiv.innerHTML = `<p class="text-red-500">取得建議失敗: ${error.message}</p>`;
+            } finally {
+                adviceButton.disabled = false;
+            }
+        }
+
+        // ==== 個人資料與儀表板函數 ====
+        window.showProfileModal = function(allowClose = true) {
+            document.getElementById('profileModal').classList.remove('hidden');
+            if (allowClose) {
+                document.getElementById('closeProfileModalButton').classList.remove('hidden');
+            } else {
+                document.getElementById('closeProfileModalButton').classList.add('hidden');
+            }
+        }
+        
+        function hideProfileModal() {
+            document.getElementById('profileModal').classList.add('hidden');
+        }
+        
+        function calculateTDEE(profile) {
+            try {
+                const { gender, age, height, weight, activityLevel } = profile;
+                if (!age || !height || !weight || !activityLevel) return 2000;
+                const h = parseFloat(height);
+                const w = parseFloat(weight);
+                const a = parseInt(age);
+                let bmr;
+                if (gender === 'male') {
+                    bmr = (10 * w) + (6.25 * h) - (5 * a) + 5;
+                } else {
+                    bmr = (10 * w) + (6.25 * h) - (5 * a) - 161;
+                }
+                const tdee = bmr * parseFloat(activityLevel);
+                return Math.round(tdee);
+            } catch (e) {
+                console.error("TDEE 計算失敗:", e);
+                return 2000; 
+            }
+        }
+        
+        function updateDashboardUI() {
+            const remaining = dailyCalorieTarget - todaysTotalCalories;
+            const remainingEl = document.getElementById('remainingCalories');
+            remainingEl.textContent = remaining.toFixed(0);
+            document.getElementById('todayTotal').textContent = `已攝取: ${todaysTotalCalories.toFixed(0)} kcal`;
+            document.getElementById('calorieTarget').textContent = `每日目標: ${dailyCalorieTarget.toFixed(0)} kcal`;
+            
+            if (remaining < 0) {
+                remainingEl.classList.add('text-red-500');
+                remainingEl.classList.remove('text-blue-800');
+            } else {
+                remainingEl.classList.remove('text-red-500');
+                remainingEl.classList.add('text-blue-800');
+            }
+        }
+        
+        // ==== 更新圖表 (堆疊長條圖) ====
+        function updateChart(mealData) {
+            const ctx = document.getElementById('calorieChart').getContext('2d');
+            const labels = [];
+            const mealsByDay = new Map();
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(today);
+                d.setDate(today.getDate() - i);
+                const dateString = d.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+                labels.push(dateString);
+                mealsByDay.set(dateString, []); 
+            }
+            
+            todaysTotalCalories = 0; 
+            const todayString = today.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+
+            mealData.forEach(meal => {
+                if (meal.CreatedAt && meal.TotalCalories) {
+                    const mealDate = meal.CreatedAt.toDate();
+                    const mealDateString = mealDate.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+                    
+                    if (mealsByDay.has(mealDateString)) {
+                        mealsByDay.get(mealDateString).push(meal); 
+                    }
+                    
+                    const mealDateOnly = new Date(mealDate);
+                    mealDateOnly.setHours(0,0,0,0);
+                    if (mealDateOnly.getTime() === today.getTime()) {
+                        todaysTotalCalories += meal.TotalCalories;
+                    }
+                }
+            });
+
+            updateDashboardUI();
+
+            const datasets = [];
+            let maxMealsPerDay = 0; 
+            mealsByDay.forEach(meals => {
+                if (meals.length > maxMealsPerDay) maxMealsPerDay = meals.length;
+            });
+
+            for (let i = 0; i < maxMealsPerDay; i++) {
+                const mealDataForThisLayer = [];
+                labels.forEach(label => {
+                    const mealsOnThisDay = mealsByDay.get(label);
+                    if (mealsOnThisDay && mealsOnThisDay[i]) {
+                        mealDataForThisLayer.push(mealsOnThisDay[i].TotalCalories);
+                    } else {
+                        mealDataForThisLayer.push(0); 
+                    }
+                });
+                
+                datasets.push({
+                    label: `第 ${i + 1} 餐`, 
+                    data: mealDataForThisLayer,
+                    backgroundColor: getRandomColor(),
+                });
+            }
+
+            datasets.push({
+                label: '每日目標 (kcal)',
+                data: labels.map(() => dailyCalorieTarget), 
+                type: 'line',
+                borderColor: 'rgba(239, 68, 68, 0.8)',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                fill: false,
+                borderWidth: 3,
+                pointRadius: 0
+            });
+
+            if (myChart) {
+                myChart.data.labels = labels;
+                myChart.data.datasets = datasets;
+                myChart.update();
+            } else {
+                myChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false, 
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label && context.dataset.type !== 'line') {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed.y !== null && context.dataset.type !== 'line') {
+                                            label += `${context.parsed.y.toFixed(0)} kcal`;
+                                        }
+                                        if(context.dataset.type === 'line') return null;
+                                        return label;
+                                    }
+                                }
+                            },
+                            legend: {
+                                display: false 
+                            }
+                        },
+                        scales: {
+                            x: { stacked: true },
+                            y: { stacked: true, beginAtZero: true }
+                        }
+                    }
+                });
+            }
+        }
+
+        // ==== Firestore 互動：儲存資料 (*** 已修改 ***) ====
+        window.saveMeal = async function() {
+            if (!currentMealData || currentMealData.length === 0 || !currentImageBase64 || !currentImageMimeType) {
+                return showMessage('請先完成食物分析並勾選至少一個項目。');
+            }
+            if (!db || !userId) {
+                 return showMessage('Firebase 尚未初始化或使用者未登入。', true);
+            }
+
+            const saveButton = document.getElementById('saveButton');
+            const saveMessage = document.getElementById('saveMessage');
+            saveButton.disabled = true;
+            saveMessage.textContent = '資料儲存中...';
+
+            try {
+                const totalCalories = currentMealData.reduce((sum, item) => sum + (item.estimated_calories || 0), 0);
+                
+                // *** 修改：產生代表性的餐點名稱 ***
+                let mealName;
+                if (currentMealData.length > 0) {
+                    mealName = currentMealData[0].name; // 使用第一個食物的名稱
+                    if (currentMealData.length > 1) {
+                        mealName += ` 等 ${currentMealData.length} 項`; // 例如: "草莓鬆餅 等 3 項"
+                    }
+                } else {
+                    mealName = currentFileName; // 後備方案，使用檔案名稱
+                }
+
+                // *** 新增：讀取地點欄位 ***
+                const location = document.getElementById('mealLocation').value || '';
+                
+                const mealsCollectionRef = collection(db, `/artifacts/${appId}/users/${userId}/Meals`);
+                
+                const newMealRef = await addDoc(mealsCollectionRef, {
+                    Name: mealName, // *** 使用新的 mealName ***
+                    Location: location, // *** 新增此欄位 ***
+                    PhotoBase64: currentImageBase64,
+                    PhotoMimeType: currentImageMimeType,
+                    TotalCalories: totalCalories,
+                    CreatedAt: serverTimestamp(),
+                    UserId: userId,
+                });
+
+                const foodItemsCollectionRef = collection(db, `/artifacts/${appId}/users/${userId}/FoodItems`);
+                for (const item of currentMealData) {
+                    // *** 新增：計算並儲存每公克熱量 ***
+                    let calPerGram = 0;
+                    if (item.estimated_quantity_g && item.estimated_quantity_g > 0) {
+                        calPerGram = (item.estimated_calories || 0) / item.estimated_quantity_g;
+                    }
+
+                    await addDoc(foodItemsCollectionRef, {
+                        Name: item.name,
+                        CaloriesPerServing: item.estimated_calories,
+                        Quantity: item.estimated_quantity_g,
+                        CaloriesPerGram: calPerGram, // *** 新增此欄位 ***
+                        MealId: newMealRef.id, 
+                        UserId: userId,
+                    });
+                }
+                
+                saveMessage.textContent = `成功儲存餐點: ${mealName}！`;
+                showMessage('餐點儲存成功！', false);
+                
+                currentMealData = [];
+                allAnalyzedItems = [];
+                currentImageBase64 = null;
+                currentImageMimeType = null;
+                currentFileName = 'AI分析餐點'; 
+                document.getElementById('cameraInput').value = ''; 
+                document.getElementById('fileInput').value = ''; 
+                
+                document.getElementById('imagePreviewContainer').classList.add('hidden');
+                document.getElementById('imagePreview').src = '';
+                document.getElementById('analyzeButton').disabled = true;
+                document.getElementById('resultsSection').classList.add('hidden');
+                document.getElementById('saveButton').disabled = true;
+                document.getElementById('mealLocation').value = ''; // *** 新增：重置地點欄位 ***
+                document.getElementById('saveMessage').textContent = '';
+                document.getElementById('adviceContainer').classList.add('hidden');
+                document.getElementById('adviceResult').classList.add('hidden');
+                document.getElementById('adviceResult').innerHTML = '';
+                document.getElementById('totalCaloriesDisplay').classList.add('hidden');
+
+            } catch (error) {
+                console.error("儲存失敗:", error);
+                const errorMsg = '資料庫儲存失敗。';
+                saveMessage.textContent = errorMsg;
+                showMessage(`儲存失敗！${error.message}`);
+                saveButton.disabled = false;
+            }
+        }
+
+        // ==== Firestore 互動：載入個人資料 ====
+        async function loadUserProfile(user) {
+            if (!db || !user) return;
+            const profileDocRef = doc(db, `/artifacts/${appId}/users/${user.uid}/Profile`, 'data');
+            
+            try {
+                const docSnap = await getDoc(profileDocRef);
+                if (docSnap.exists()) {
+                    userProfile = docSnap.data();
+                    document.getElementById('nickname').value = userProfile.nickname || user.displayName || '';
+                    document.getElementById('gender').value = userProfile.gender || 'male';
+                    document.getElementById('age').value = userProfile.age || '';
+                    document.getElementById('height').value = userProfile.height || '';
+                    document.getElementById('weight').value = userProfile.weight || '';
+                    document.getElementById('activityLevel').value = userProfile.activityLevel || '1.2';
+                    dailyCalorieTarget = calculateTDEE(userProfile);
+                    updateDashboardUI();
+                } else {
+                    document.getElementById('nickname').value = user.displayName || '';
+                    // 只有在是匿名使用者且沒有資料時才自動跳出
+                    if (user.isAnonymous) {
+                        // *** 修改：將 false 改為 true，顯示「稍後」按鈕 (即略過按鈕) ***
+                        showProfileModal(true);
+                    }
+                    updateDashboardUI(); 
+                }
+            } catch (error) {
+                console.error("載入個人資料失敗:", error);
+                showMessage("載入個人資料失敗", true);
+            }
+        }
+
+        // ==== Firestore 互動：儲存個人資料 ====
+        window.saveUserProfile = async function() {
+            if (!db || !userId) return showMessage("使用者未登入", true);
+
+            const profileData = {
+                nickname: document.getElementById('nickname').value,
+                gender: document.getElementById('gender').value,
+                age: document.getElementById('age').value,
+                height: document.getElementById('height').value,
+                weight: document.getElementById('weight').value,
+                activityLevel: document.getElementById('activityLevel').value,
+            };
+
+            if (!profileData.age || !profileData.height || !profileData.weight) {
+                return showMessage("請填寫年齡、身高和體重。", true);
+            }
+
+            const profileDocRef = doc(db, `/artifacts/${appId}/users/${userId}/Profile`, 'data');
+            
+            try {
+                await setDoc(profileDocRef, profileData, { merge: true });
+                
+                if (auth.currentUser && !auth.currentUser.isAnonymous && profileData.nickname !== auth.currentUser.displayName) {
+                    await updateProfile(auth.currentUser, { displayName: profileData.nickname });
+                }
+                
+                userProfile = profileData;
+                dailyCalorieTarget = calculateTDEE(userProfile);
+                updateDashboardUI(); 
+                updateAuthUI(auth.currentUser); // 更新 UI 上的暱稱
+                
+                if (myChart) { 
+                    myChart.data.datasets.find(ds => ds.type === 'line').data = myChart.data.labels.map(() => dailyCalorieTarget);
+                    myChart.update();
+                }
+                
+                hideProfileModal();
+                showMessage("個人資料儲存成功！", false);
+            } catch (error) {
+                console.error("儲存個人資料失敗:", error);
+                showMessage("儲存個人資料失敗", true);
+            }
+        }
+
+        // ==== Firestore 互動：訂閱所有資料 (讀取 Base64 圖片) ====
+        function subscribeToMealsAndData(uid) {
+            if (!db || !uid) return;
+
+            const mealsCollectionRef = collection(db, `/artifacts/${appId}/users/${uid}/Meals`);
+            const q = query(mealsCollectionRef, orderBy("CreatedAt", "asc"));
+            
+            const historyList = document.getElementById('pastMealsList');
+            document.getElementById('historyLoading').classList.remove('hidden');
+            
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                let html = '';
+                if (snapshot.empty) {
+                    historyList.innerHTML = '<p class="text-center text-gray-500">還沒有用餐記錄，快去新增一餐吧！</p>';
+                    updateChart([]); 
+                    return;
+                }
+
+                const allMeals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
+                const sortedForList = [...allMeals].sort((a, b) => (b.CreatedAt?.seconds || 0) - (a.CreatedAt?.seconds || 0));
+
+                sortedForList.forEach(meal => {
+                    const date = meal.CreatedAt ? new Date(meal.CreatedAt.seconds * 1000).toLocaleString('zh-TW') : '未知日期';
+                    
+                    let imgSrc = 'https://placehold.co/100x100/A0BFFF/FFFFFF?text=No+Img';
+                    if (meal.PhotoBase64 && meal.PhotoMimeType) {
+                        imgSrc = `data:${meal.PhotoMimeType};base64,${meal.PhotoBase64}`;
+                    }
+                    
+                    // *** 修改：將 div 改為 button 並加入點擊事件 ***
+                    html += `
+                        <button onclick="openEditModal('${meal.id}', '${imgSrc}')" 
+                                class="w-full text-left p-4 border border-gray-200 rounded-xl flex items-center space-x-4 bg-white shadow-sm hover:shadow-md transition">
+                            <img src="${imgSrc}" class="w-16 h-16 object-cover rounded-md flex-shrink-0" />
+                            <div class="flex-grow">
+                                <p class="font-bold text-gray-800">${meal.Name || '無標題餐點'}</p>
+                                <p class="text-sm text-gray-500">${date}</p>
+                                <!-- *** 新增：顯示地點 *** -->
+                                ${meal.Location ? `<p class="text-sm text-blue-600 font-medium mt-1">📍 ${meal.Location}</p>` : ''}
+                            </div>
+                            <span class="text-lg font-extrabold text-red-600">${meal.TotalCalories ? meal.TotalCalories.toFixed(0) : '?'} kcal</span>
+                        </button>
+                    `;
+                });
+                historyList.innerHTML = html;
+                updateChart(allMeals);
+
+            }, (error) => {
+                console.error("歷史資料載入失敗:", error);
+                historyList.innerHTML = '<p class="text-center text-red-500">歷史記錄載入失敗。</p>';
+            });
+            return unsubscribe; // 回傳取消訂閱的函數
+        }
+        
+        // ==== *** 新增：編輯餐點功能區塊 *** ====
+        
+        // 1. 開啟編輯彈窗
+        window.openEditModal = async function(mealId, imgSrc) { // *** 修改：設為 async ***
+            currentEditingMealId = mealId;
+            document.getElementById('editMealImage').src = imgSrc;
+            document.getElementById('editItemsList').innerHTML = '<p class="text-center text-gray-500">正在載入食物細項...</p>';
+            document.getElementById('editMealModal').classList.remove('hidden');
+            
+            // *** 新增：載入餐點地點 ***
+            document.getElementById('editMealLocation').value = ''; // 先清空
+            try {
+                const mealDocRef = doc(db, `/artifacts/${appId}/users/${userId}/Meals`, mealId);
+                const mealSnap = await getDoc(mealDocRef);
+                if (mealSnap.exists()) {
+                    document.getElementById('editMealLocation').value = mealSnap.data().Location || '';
+                }
+            } catch (error) {
+                console.error("載入餐點地點失敗:", error);
+            }
+            
+            loadItemsForEdit(mealId);
+        }
+
+        // 2. 關閉編輯彈窗
+        function closeEditModal() {
+            currentEditingMealId = null;
+            document.getElementById('editMealModal').classList.add('hidden');
+        }
+
+        // 3. 載入該餐點的食物細項
+        async function loadItemsForEdit(mealId) {
+            if (!db || !userId || !mealId) return;
+            const itemsListDiv = document.getElementById('editItemsList');
+            const itemsRef = collection(db, `/artifacts/${appId}/users/${userId}/FoodItems`);
+            const q = query(itemsRef, where("MealId", "==", mealId));
+            
+            try {
+                const snapshot = await getDocs(q);
+                if (snapshot.empty) {
+                    itemsListDiv.innerHTML = '<p class="text-center text-gray-500">找不到食物細項。可能是舊資料或已被刪除。</p>';
+                    return;
+                }
+                
+                let html = '';
+                snapshot.docs.forEach(doc => {
+                    const item = { id: doc.id, ...doc.data() };
+                    const name = item.Name || '未知食物';
+                    const qty = item.Quantity || 0;
+                    const cals = item.CaloriesPerServing || 0;
+                    // *** 新增：讀取每公克熱量 ***
+                    const calPerGram = item.CaloriesPerGram || 0; 
+                    
+                    html += `
+                        <div class="p-3 border border-gray-200 rounded-lg bg-gray-50 space-y-2" id="edit-item-${item.id}">
+                            <p class="font-bold text-gray-800">${name}</p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="text-xs font-medium text-gray-500">份量 (g)</label>
+                                    <input type="number" id="qty-${item.id}" 
+                                           value="${qty}" 
+                                           class="w-full text-sm p-1 border-gray-300 rounded-md shadow-sm"
+                                           data-cal-per-gram="${calPerGram}"  
+                                           oninput="recalculateItemCalories('${item.id}')"> 
+                                </div>
+                                <div>
+                                    <label class="text-xs font-medium text-gray-500">熱量 (kcal)</label>
+                                    <input type="number" id="cals-${item.id}" value="${cals.toFixed(0)}" class="w-full text-sm p-1 border-gray-300 rounded-md shadow-sm">
+                                </div>
+                            </div>
+                            <div class="flex justify-end space-x-2">
+                                <button onclick="deleteMealItem('${item.id}')" class="text-xs font-medium text-red-500 hover:text-red-700">刪除此項</button>
+                                <button onclick="updateMealItem('${item.id}')" class="text-xs font-medium px-2 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600">更新</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                itemsListDiv.innerHTML = html;
+                
+            } catch (error) {
+                console.error("載入食物細項失敗:", error);
+                itemsListDiv.innerHTML = `<p class="text-red-500">載入細項失敗: ${error.message}</p>`;
+            }
+        }
+        
+        // 4b. *** 新增：在編輯時，根據份量自動計算熱量 ***
+        window.recalculateItemCalories = function(itemId) {
+            try {
+                const qtyInput = document.getElementById(`qty-${itemId}`);
+                const calsInput = document.getElementById(`cals-${itemId}`);
+                
+                const newQty = parseFloat(qtyInput.value);
+                const calPerGram = parseFloat(qtyInput.dataset.calPerGram);
+                
+                if (isNaN(newQty) || isNaN(calPerGram)) {
+                    // 如果輸入無效，不要計算
+                    return;
+                }
+                
+                const newCals = newQty * calPerGram;
+                calsInput.value = newCals.toFixed(0);
+            } catch (error) {
+                console.error("熱量連動計算失敗:", error);
+            }
+        }
+        
+        // 4c. 更新單一食物細項 (原 4. 更新)
+        window.updateMealItem = async function(itemId) {
+            if (!db || !userId) return;
+            const newQty = parseFloat(document.getElementById(`qty-${itemId}`).value);
+            const newCals = parseFloat(document.getElementById(`cals-${itemId}`).value);
+            
+            if (isNaN(newQty) || isNaN(newCals)) {
+                return showMessage("份量或熱量必須是有效的數字。");
+            }
+
+            // *** 新增：重新計算並儲存每公克熱量 ***
+            let newCalPerGram = 0;
+            if (newQty && newQty > 0) {
+                newCalPerGram = newCals / newQty;
+            }
+            
+            const itemDocRef = doc(db, `/artifacts/${appId}/users/${userId}/FoodItems`, itemId);
+            try {
+                await updateDoc(itemDocRef, {
+                    Quantity: newQty,
+                    CaloriesPerServing: newCals,
+                    CaloriesPerGram: newCalPerGram // *** 新增：更新此欄位 ***
+                });
+                showMessage("食物細項已更新！", false);
+                // 更新完成後，重新計算整餐的總熱量
+                await recalculateTotalCalories(currentEditingMealId);
+            } catch (error) {
+                console.error("更新細項失敗:", error);
+                showMessage("更新失敗", true);
+            }
+        }
+        
+        // *** 新增：更新餐點地點 ***
+        window.updateMealLocation = async function() {
+            if (!db || !userId || !currentEditingMealId) {
+                return showMessage("無法更新地點：找不到餐點 ID 或使用者。");
+            }
+            
+            const newLocation = document.getElementById('editMealLocation').value;
+            const mealDocRef = doc(db, `/artifacts/${appId}/users/${userId}/Meals`, currentEditingMealId);
+            
+            try {
+                await updateDoc(mealDocRef, {
+                    Location: newLocation
+                });
+                showMessage("地點已更新！", false);
+            } catch (error) {
+                console.error("更新地點失敗:", error);
+                showMessage("更新地點失敗", true);
+            }
+        }
+        
+        // 5. 刪除單一食物細項
+        window.deleteMealItem = async function(itemId) {
+            if (!db || !userId) return;
+            
+            const itemDocRef = doc(db, `/artifacts/${appId}/users/${userId}/FoodItems`, itemId);
+            try {
+                await deleteDoc(itemDocRef);
+                showMessage("食物細項已刪除！", false);
+                document.getElementById(`edit-item-${itemId}`).remove();
+                // 刪除完成後，重新計算整餐的總熱量
+                await recalculateTotalCalories(currentEditingMealId);
+            } catch (error) {
+                console.error("刪除細項失敗:", error);
+                showMessage("刪除失敗", true);
+            }
+        }
+        
+        // 6. 重新計算該餐點的總熱量 (更新/刪除細項後觸發)
+        async function recalculateTotalCalories(mealId) {
+            if (!db || !userId || !mealId) return;
+            const itemsRef = collection(db, `/artifacts/${appId}/users/${userId}/FoodItems`);
+            const q = query(itemsRef, where("MealId", "==", mealId));
+            
+            let newTotalCalories = 0;
+            try {
+                const snapshot = await getDocs(q);
+                snapshot.docs.forEach(doc => {
+                    newTotalCalories += (doc.data().CaloriesPerServing || 0);
+                });
+                
+                // 將新的總熱量寫回 Meals 文件
+                const mealDocRef = doc(db, `/artifacts/${appId}/users/${userId}/Meals`, mealId);
+                await updateDoc(mealDocRef, {
+                    TotalCalories: newTotalCalories
+                });
+                
+                console.log(`餐點 ${mealId} 的總熱量已更新為 ${newTotalCalories}`);
+                // 儀表板和圖表會因為 onSnapshot 自動更新
+            } catch (error) {
+                console.error("重新計算總熱量失敗:", error);
+            }
+        }
+        
+        // 7. 刪除整筆餐點 (包含所有細項)
+        window.deleteEntireMeal = async function() {
+            if (!db || !userId || !currentEditingMealId) return;
+            
+            const mealId = currentEditingMealId;
+            
+            try {
+                const batch = writeBatch(db);
+                
+                // 1. 刪除 Meal 文件
+                const mealDocRef = doc(db, `/artifacts/${appId}/users/${userId}/Meals`, mealId);
+                batch.delete(mealDocRef);
+                
+                // 2. 查詢並刪除所有相關的 FoodItems
+                const itemsRef = collection(db, `/artifacts/${appId}/users/${userId}/FoodItems`);
+                const q = query(itemsRef, where("MealId", "==", mealId));
+                const itemsSnapshot = await getDocs(q);
+                itemsSnapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+                
+                // 3. 執行批次刪除
+                await batch.commit();
+                
+                showMessage("整筆餐點記錄已成功刪除！", false);
+                closeEditModal();
+                
+            } catch (error) {
+                console.error("刪除整筆餐點失敗:", error);
+                showMessage(`刪除失敗: ${error.message}`, true);
+            }
+        }
+        
+        // ==== *** 結束：編輯餐點功能區塊 *** ====
+
+        // ==== Google 登入 (已重構，可處理覆蓋) ====
+        window.signInWithGoogle = async function() {
+            // 登入前，記住當下的匿名 ID
+            if (auth.currentUser && auth.currentUser.isAnonymous) {
+                anonymousUserIdBeforeSignIn = auth.currentUser.uid;
+            } else {
+                anonymousUserIdBeforeSignIn = null;
+            }
+
+            const provider = new GoogleAuthProvider();
+            const button = document.getElementById('googleSignInButton');
+            const message = document.getElementById('googleSignInMessage');
+            button.disabled = true;
+            message.textContent = '正在開啟 Google 登入...';
+
+            try {
+                const result = await signInWithPopup(auth, provider);
+                message.textContent = '登入成功！';
+                showMessage("Google 登入成功！", false);
+                
+            } catch (error) {
+                // *** 核心：捕捉衝突錯誤 ***
+                if (error.code === 'auth/credential-already-in-use' || error.code === 'auth/account-exists-with-different-credential') {
+                    console.warn("偵測到資料衝突:", error.code);
+                    googleCredentialForMerge = GoogleAuthProvider.credentialFromError(error);
+                    
+                    // 顯示合併彈窗
+                    document.getElementById('mergeModal').classList.remove('hidden');
+                    message.textContent = '偵測到資料衝突...';
+                    
+                } else {
+                    console.error("Google 登入失敗:", error);
+                    message.textContent = '登入失敗，請重試。';
+                    showMessage(`登入失敗: ${error.message}`, true);
+                    button.disabled = false;
+                    anonymousUserIdBeforeSignIn = null; 
+                }
+            }
+        }
+        
+        // ==== 登出 ====
+        window.signOutUser = async function() {
+            try {
+                await signOut(auth);
+                showMessage("您已成功登出。", false);
+            } catch (error) {
+                console.error("登出失敗:", error);
+                showMessage("登出失敗", true);
+            }
+        }
+        
+        // ==== 更新登入 UI ====
+        function updateAuthUI(user) {
+            const userInfoDiv = document.getElementById('userInfo');
+            const signInButton = document.getElementById('googleSignInButton');
+            const userDisplayName = document.getElementById('userDisplayName');
+            const signInMessage = document.getElementById('googleSignInMessage');
+            const deleteSection = document.getElementById('deleteAccountSection');
+            
+            signInButton.disabled = false;
+
+            if (user && !user.isAnonymous) {
+                // 已登入 Google 帳號
+                const displayName = userProfile?.nickname || user.displayName || user.email || '已登入使用者';
+                userDisplayName.textContent = `歡迎, ${displayName}!`;
+                userInfoDiv.classList.remove('hidden');
+                signInButton.classList.add('hidden');
+                signInMessage.textContent = '';
+                deleteSection.classList.remove('hidden'); // Show delete section
+            } else {
+                // 匿名登入
+                userInfoDiv.classList.add('hidden');
+                signInButton.classList.remove('hidden');
+                signInMessage.textContent = '登入 Google 帳號以跨裝置同步您的記錄。';
+                deleteSection.classList.add('hidden'); // Hide delete section
+            }
+        }
+
+        // ==== 輔助函數：刪除一個使用者的所有資料 ====
+        async function deleteAllUserData(uid) {
+            if (!db || !uid) return;
+            const batch = writeBatch(db);
+
+            // 刪除 Meals
+            const mealsRef = collection(db, `/artifacts/${appId}/users/${uid}/Meals`);
+            const mealsSnapshot = await getDocs(mealsRef);
+            mealsSnapshot.docs.forEach(doc => batch.delete(doc.ref));
+
+            // 刪除 FoodItems
+            const foodItemsRef = collection(db, `/artifacts/${appId}/users/${uid}/FoodItems`);
+            const foodItemsSnapshot = await getDocs(foodItemsRef);
+            foodItemsSnapshot.docs.forEach(doc => batch.delete(doc.ref));
+
+            // 刪除 Profile
+            const profileRef = doc(db, `/artifacts/${appId}/users/${uid}/Profile`, 'data');
+            batch.delete(profileRef);
+
+            await batch.commit();
+            console.log(`已刪除使用者 ${uid} 的所有資料。`);
+        }
+        
+        // ==== 新增：刪除使用者帳號 ====
+        window.deleteUserAccount = async function() {
+            if (!auth.currentUser || auth.currentUser.isAnonymous) {
+                showMessage("只有已登入 Google 的使用者才能刪除帳號。", true);
+                return;
+            }
+
+            const confirmation = confirm("您確定要永久刪除您的帳號和所有資料嗎？此操作無法復原。");
+            if (!confirmation) {
+                return;
+            }
+
+            const user = auth.currentUser;
+            const uid = user.uid;
+
+            try {
+                showMessage("正在刪除您的資料...", false);
+                await deleteAllUserData(uid);
+                
+                showMessage("資料已刪除，正在刪除帳號...", false);
+                await deleteUser(user);
+                
+                hideProfileModal();
+                showMessage("您的帳號已成功刪除。", false);
+                // onAuthStateChanged will automatically handle signing in a new anonymous user.
+            } catch (error) {
+                console.error("刪除帳號失敗:", error);
+                let message = `刪除帳號失敗: ${error.message}`;
+                if (error.code === 'auth/requires-recent-login') {
+                    message = "此操作需要您最近曾登入。請先登出再重新登入一次，然後再嘗試刪除。";
+                }
+                showMessage(message, true);
+            }
+        }
+
+        // ==== 輔助函數：複製一個使用者的所有資料到另一個 ====
+        async function copyUserData(fromUid, toUid) {
+            if (!db || !fromUid || !toUid) return;
+            const batch = writeBatch(db);
+            const mealIdMap = new Map(); // 儲存舊 Meal ID 和新 Meal ID 的對應
+
+            // 1. 複製 Profile
+            const oldProfileRef = doc(db, `/artifacts/${appId}/users/${fromUid}/Profile`, 'data');
+            const oldProfileSnap = await getDoc(oldProfileRef);
+            if (oldProfileSnap.exists()) {
+                const newProfileRef = doc(db, `/artifacts/${appId}/users/${toUid}/Profile`, 'data');
+                batch.set(newProfileRef, oldProfileSnap.data());
+            }
+
+            // 2. 複製 Meals
+            const oldMealsRef = collection(db, `/artifacts/${appId}/users/${fromUid}/Meals`);
+            const mealsSnapshot = await getDocs(oldMealsRef);
+            
+            for (const mealDoc of mealsSnapshot.docs) {
+                const mealData = mealDoc.data();
+                const newMealRef = doc(collection(db, `/artifacts/${appId}/users/${toUid}/Meals`));
+                mealData.UserId = toUid; // 更新 UserId
+                batch.set(newMealRef, mealData);
+                mealIdMap.set(mealDoc.id, newMealRef.id); // 記錄 ID 對應
+            }
+
+            // 3. 複製 FoodItems
+            const oldFoodItemsRef = collection(db, `/artifacts/${appId}/users/${fromUid}/FoodItems`);
+            const foodItemsSnapshot = await getDocs(oldFoodItemsRef);
+            
+            for (const itemDoc of foodItemsSnapshot.docs) {
+                const itemData = itemDoc.data();
+                const newFoodItemRef = doc(collection(db, `/artifacts/${appId}/users/${toUid}/FoodItems`));
+                itemData.UserId = toUid; // 更新 UserId
+                // 更新關聯的 MealId
+                if (itemData.MealId && mealIdMap.has(itemData.MealId)) {
+                    itemData.MealId = mealIdMap.get(itemData.MealId);
+                }
+                batch.set(newFoodItemRef, itemData);
+            }
+
+            // 4. 執行批次寫入
+            await batch.commit();
+            console.log(`已將 ${fromUid} 的資料複製到 ${toUid}`);
+        }
+
+        // ==== 新功能：以本機資料覆蓋雲端 ====
+        window.overwriteWithAnonymousData = async function() {
+            if (!googleCredentialForMerge || !anonymousUserIdBeforeSignIn) {
+                showMessage("覆蓋失敗：找不到憑證或匿名 ID。", true);
+                return;
+            }
+            
+            isHandlingConflict = true; 
+            document.getElementById('mergeModal').classList.add('hidden');
+            showMessage('資料覆蓋中，請稍候...', false);
+            
+            try {
+                // 1. 先用憑證登入 Google 帳號
+                const userCredential = await signInWithCredential(auth, googleCredentialForMerge);
+                const newUserId = userCredential.user.uid;
+
+                if (newUserId === anonymousUserIdBeforeSignIn) {
+                    throw new Error("新舊 User ID 相同，無法覆蓋。");
+                }
+                
+                // 2. 刪除 Google 帳號 (newUserId) 上的所有舊資料
+                showMessage('正在刪除雲端舊資料...', false);
+                await deleteAllUserData(newUserId);
+                
+                // 3. 複製匿名帳號 (anonymousUserIdBeforeSignIn) 的資料到 Google 帳號 (newUserId)
+                showMessage('正在上傳本機資料...', false);
+                await copyUserData(anonymousUserIdBeforeSignIn, newUserId);
+                
+                showMessage('資料覆蓋成功！正在載入您的帳號...', false);
+                
+            } catch (error) {
+                console.error("資料覆蓋失敗:", error);
+                showMessage(`資料覆蓋失敗: ${error.message}`, true);
+            } finally {
+                // 清除暫存
+                anonymousUserIdBeforeSignIn = null;
+                googleCredentialForMerge = null;
+                isHandlingConflict = false; 
+                
+                // 強制 onAuthStateChanged 重新執行
+                onAuthStateChanged(auth, () => {});
+                if(auth.currentUser) {
+                    handleAuthStateChange(auth.currentUser);
+                }
+            }
+        }
+
+        // ==== 拋棄資料函數 (已修改) ====
+        window.discardAnonymousData = async function() {
+            if (!googleCredentialForMerge) {
+                showMessage("操作失敗：找不到憑證。", true);
+                return;
+            }
+            
+            isHandlingConflict = true; 
+            document.getElementById('mergeModal').classList.add('hidden');
+            showMessage('已拋棄本機匿名資料，正在登入...', false);
+
+            try {
+                // 直接用憑證登入
+                await signInWithCredential(auth, googleCredentialForMerge);
+            } catch (error) {
+                console.error("登入失敗:", error);
+                showMessage(`登入失敗: ${error.message}`, true);
+            } finally {
+                // 清除暫存
+                anonymousUserIdBeforeSignIn = null;
+                googleCredentialForMerge = null;
+                isHandlingConflict = false;
+                
+                // 強制 onAuthStateChanged 重新執行
+                onAuthStateChanged(auth, () => {});
+                if(auth.currentUser) {
+                    handleAuthStateChange(auth.currentUser);
+                }
+            }
+        }
+
+        // ==== 抽離的 AuthStateChange 處理函數 ====
+        async function handleAuthStateChange(user) {
+            // 如果正在處理衝突，則跳過
+            if (isHandlingConflict) {
+                console.log("偵測到衝突處理中，handleAuthStateChange 暫停...");
+                return;
+            }
+
+            // 取消舊的訂閱
+            if (mealSubscription) {
+                mealSubscription();
+                mealSubscription = null;
+                document.getElementById('pastMealsList').innerHTML = '<p class="text-center text-gray-500">正在切換使用者...</p>';
+                document.getElementById('historyLoading').classList.remove('hidden');
+            }
+            
+            let currentUser = user;
+            if (!currentUser) {
+                // 如果沒有使用者 (例如剛登出)，則重新匿名登入
+                try {
+                    const userCredential = await signInAnonymously(auth);
+                    currentUser = userCredential.user;
+                } catch (anonError) {
+                    console.error("匿名登入失敗:", anonError);
+                    showMessage("無法匿名登入，APP 功能將受限。", true);
+                    return;
+                }
+            }
+            
+            userId = currentUser.uid;
+            console.log("Firebase 認證成功，使用者 ID:", userId, "匿名:", currentUser.isAnonymous);
+            
+            updateAuthUI(currentUser);
+            await loadUserProfile(currentUser);
+            mealSubscription = subscribeToMealsAndData(userId); // 建立新訂閱
+        }
+
+        // ==== 初始化 Firebase (已修改) ====
+        async function initFirebase() {
+            try {
+                if (!firebaseConfig || !firebaseConfig.apiKey) {
+                    console.error("Firebase 設定遺失！");
+                    showMessage("Firebase 設定遺失！APP 無法連線。", true);
+                    showProfileModal(false);
+                    return; 
+                }
+
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // 使用抽離的函數
+                onAuthStateChanged(auth, handleAuthStateChange);
+
+            } catch (error) {
+                console.error("Firebase 初始化失敗:", error);
+                showMessage(`Firebase 初始化失敗！請檢查配置。${error.message}`, true);
+            }
+        }
+        
+        // 將必要的函數掛載到 window
+        window.saveUserProfile = saveUserProfile;
+        window.showProfileModal = showProfileModal;
+        window.updateSelectedMealData = updateSelectedMealData;
+        window.signInWithGoogle = signInWithGoogle;
+        window.signOutUser = signOutUser;
+        window.overwriteWithAnonymousData = overwriteWithAnonymousData;
+        window.discardAnonymousData = discardAnonymousData;
+        window.deleteUserAccount = deleteUserAccount;
+        window.openEditModal = openEditModal; 
+        window.recalculateItemCalories = recalculateItemCalories; 
+        window.updateMealItem = updateMealItem; 
+        window.updateMealLocation = updateMealLocation; // *** 新增 ***
+        window.deleteMealItem = deleteMealItem; 
+        window.deleteEntireMeal = deleteEntireMeal; 
+        document.getElementById('closeEditModalButton').onclick = closeEditModal; // *** 新增 ***
+        // *** 新增：為「個人資料」彈窗的「稍後」按鈕綁定關閉事件 ***
+        document.getElementById('closeProfileModalButton').onclick = hideProfileModal;
+
+        // 頁面載入時執行初始化
+        window.onload = initFirebase;
+    </script>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/service-worker.js')
+            .catch(function(err) {
+              console.error('Service Worker 註冊失敗:', err);
+            });
+        });
+      }
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "name": "Gemini AI Calorie Tracker",
+  "description": "An intelligent calorie tracking assistant that analyzes your meals from photos using AI to help you manage your daily nutritional intake.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
