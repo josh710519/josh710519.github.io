@@ -369,7 +369,7 @@
             // 檢查是否為 API Key 的 Referer 限制或 Firebase Auth Domain 限制
             if ((error.message && error.message.includes('requests-from-referer') && error.message.includes('blocked')) || 
                 error.code === 'auth/unauthorized-domain') {
-                return `網域未授權。請複製此網址：【${window.location.hostname}】並新增至 Firebase Console > Authentication > Settings > Authorized domains。`;
+                return `網域未授權。請至 Firebase Console 新增 Authorized Domain，或至 Google Cloud Console 檢查 API Key 的 Website restrictions。目前網域：【${window.location.hostname}】`;
             }
             return error.message;
         }
@@ -1346,11 +1346,15 @@
             message.textContent = '正在開啟 Google 登入...';
 
             try {
+                // 加入 log 以方便除錯
+                console.log("Attempting Google Sign-In with Popup...");
                 const result = await signInWithPopup(auth, provider);
                 message.textContent = '登入成功！';
                 showMessage("Google 登入成功！", false);
                 
             } catch (error) {
+                console.error("Google Sign-In Error Detail:", error); // 詳細 log
+                
                 // *** 核心：捕捉衝突錯誤 ***
                 if (error.code === 'auth/credential-already-in-use' || error.code === 'auth/account-exists-with-different-credential') {
                     console.warn("偵測到資料衝突:", error.code);
