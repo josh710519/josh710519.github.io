@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -370,6 +371,10 @@
             if ((error.message && error.message.includes('requests-from-referer') && error.message.includes('blocked')) || 
                 error.code === 'auth/unauthorized-domain') {
                 return `網域未授權。請至 Firebase Console 新增 Authorized Domain，或至 Google Cloud Console 檢查 API Key 的 Website restrictions。目前網域：【${window.location.hostname}】`;
+            }
+            // *** 新增：捕捉 'The requested action is invalid' 並提示 API Key 限制問題 ***
+            if (error.message && error.message.includes('The requested action is invalid')) {
+                 return 'API Key 設定受限。請至 Google Cloud Console，將 "foodcc-47d21.firebaseapp.com" 加入 API Key 的網站限制清單中，這是登入視窗必須的。';
             }
             return error.message;
         }
