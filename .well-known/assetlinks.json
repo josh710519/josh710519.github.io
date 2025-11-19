@@ -1,0 +1,12 @@
+
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "請填入您在Google_Play_Console上的Package_ID",
+      "sha256_cert_fingerprints":
+        ["B0:BB:07:0D:BF:80:CA:1C:DE:FA:DD:71:64:5D:84:E2:DD:0C:0D:51:F7:62:BF:F4:50:73:E3:C2:85:95:15:4E"]
+    }
+  }
+]
