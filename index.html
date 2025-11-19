@@ -56,7 +56,7 @@
         <header class="mb-8 p-4 bg-white rounded-2xl shadow-lg border border-gray-100">
             <div class="flex justify-between items-center mb-4">
                 <div>
-                    <h1 class="text-3xl font-extrabold text-blue-700 tracking-tight">🍽️ Gemini 熱量分析</h1>
+                    <h1 class="text-3xl font-extrabold text-blue-700 tracking-tight">🍽️ 美食熱量分析</h1>
                     <p class="text-gray-500 text-sm font-medium">您的 AI 營養管理助手。</p>
                 </div>
                 <button onclick="showProfileModal(true)" class="p-3 bg-gray-50 rounded-full hover:bg-blue-50 text-gray-600 hover:text-blue-600 transition shadow-sm border border-gray-100">
@@ -64,20 +64,12 @@
                 </button>
             </div>
             
-            <!-- Google 登入區塊 -->
-            <div id="authSection" class="border-t border-gray-100 pt-4">
-                <!-- 顯示使用者名稱和登出按鈕 (登入後) -->
-                <div id="userInfo" class="hidden flex items-center justify-between">
+            <!-- 登入狀態區塊 (僅顯示歡迎訊息與登出) -->
+            <div id="authSection" class="border-t border-gray-100 pt-4 hidden">
+                <div id="userInfo" class="flex items-center justify-between">
                     <span id="userDisplayName" class="text-sm font-bold text-gray-800">歡迎！</span>
                     <button onclick="signOutUser()" class="text-xs font-medium text-red-500 hover:text-red-700 border border-red-100 px-3 py-1 rounded-full hover:bg-red-50 transition">登出</button>
                 </div>
-                <!-- 顯示 Google 登入按鈕 (登出時) -->
-                <button id="googleSignInButton" onclick="signInWithGoogle()" 
-                        class="w-full py-2.5 px-4 rounded-xl font-bold text-white bg-gray-900 hover:bg-black transition duration-150 shadow-lg flex items-center justify-center transform active:scale-95">
-                    <svg class="w-5 h-5 mr-2" fill="white" viewBox="0 0 48 48"><path d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"></path></svg>
-                    使用 Google 登入
-                </button>
-                <p id="googleSignInMessage" class="text-xs text-gray-400 text-center mt-2"></p>
             </div>
         </header>
 
@@ -202,9 +194,23 @@
     <div id="profileModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
         <div class="bg-white w-full max-w-md p-6 rounded-3xl shadow-2xl transform transition-all max-h-[90vh] flex flex-col overflow-hidden">
             <h2 class="text-2xl font-bold text-gray-900 mb-1">個人資料</h2>
-            <p class="text-sm text-gray-500 mb-6">設定您的身體數值以計算 TDEE。</p>
+            <p class="text-sm text-gray-500 mb-4">管理您的帳號與身體數值。</p>
+            
             <div class="overflow-y-auto no-scrollbar flex-grow pr-1">
+                
+                <!-- Google 登入區塊 (移至此處) -->
+                <div id="profileLoginSection" class="mb-6 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                    <p class="text-sm text-gray-600 mb-3 font-medium">登入以同步雲端記錄：</p>
+                    <button id="googleSignInButton" onclick="signInWithGoogle()" 
+                            class="w-full py-2.5 px-4 rounded-xl font-bold text-white bg-gray-900 hover:bg-black transition duration-150 shadow-lg flex items-center justify-center transform active:scale-95">
+                        <svg class="w-5 h-5 mr-2" fill="white" viewBox="0 0 48 48"><path d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"></path></svg>
+                        使用 Google 登入
+                    </button>
+                    <p id="googleSignInMessage" class="text-xs text-gray-400 text-center mt-2"></p>
+                </div>
+
                 <form id="profileForm" class="space-y-5">
+                    <h3 class="text-sm font-bold text-gray-900 border-b pb-2">TDEE 計算設定</h3>
                     <div>
                         <label class="block text-sm font-bold text-gray-700 mb-1">暱稱</label>
                         <input type="text" id="nickname" class="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition" placeholder="例如：美食家小王">
@@ -711,7 +717,7 @@
                 showMessage('分析完成！請勾選您吃下的食物', false);
                 
             } catch (error) {
-                resultDiv.innerHTML = `<p class="text-red-500">分析失敗: ${error.message}</p>`;
+                resultDiv.innerHTML = `<p class="text-red-500">分析失敗: ${getFriendlyErrorMessage(error)}</p>`;
                 document.getElementById('saveButton').disabled = true;
             } finally {
                 analyzeButton.disabled = false;
@@ -753,7 +759,7 @@
                 const adviceText = await callGeminiTextAPI(currentMealData);
                 adviceResultDiv.innerHTML = `<p class="text-gray-800">${adviceText.replace(/\n/g, '<br>')}</p>`;
             } catch (error) {
-                adviceResultDiv.innerHTML = `<p class="text-red-500">取得建議失敗: ${error.message}</p>`;
+                adviceResultDiv.innerHTML = `<p class="text-red-500">取得建議失敗: ${getFriendlyErrorMessage(error)}</p>`;
             } finally {
                 adviceButton.disabled = false;
             }
@@ -814,7 +820,7 @@
         function updateChart(mealData) {
             const ctx = document.getElementById('calorieChart').getContext('2d');
             const labels = [];
-            const mealsByDay = new Map();
+            const mealsByDay = new Map(); // Map<DateString, Array<MealObject>>
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             
@@ -859,6 +865,7 @@
                 labels.forEach(label => {
                     const mealsOnThisDay = mealsByDay.get(label);
                     if (mealsOnThisDay && mealsOnThisDay[i]) {
+                        // 這裡我們只存數字，但在 tooltip 會用 index 去 mealsByDay 查名字
                         mealDataForThisLayer.push(mealsOnThisDay[i].TotalCalories);
                     } else {
                         mealDataForThisLayer.push(0); 
@@ -866,14 +873,14 @@
                 });
                 
                 datasets.push({
-                    label: `第 ${i + 1} 餐`, 
+                    label: `餐點`, // 預設標籤，Tooltip 會覆蓋
                     data: mealDataForThisLayer,
                     backgroundColor: getRandomColor(),
                 });
             }
 
             datasets.push({
-                label: '每日目標 (kcal)',
+                label: '每日目標',
                 data: labels.map(() => dailyCalorieTarget), 
                 type: 'line',
                 borderColor: 'rgba(239, 68, 68, 0.8)',
@@ -883,9 +890,31 @@
                 pointRadius: 0
             });
 
+            // Tooltip Callback 邏輯：使用 dataIndex 和 datasetIndex 回查餐點名稱
+            const tooltipCallbacks = {
+                label: function(context) {
+                    if (context.dataset.type === 'line') {
+                        return `${context.dataset.label}: ${context.parsed.y.toFixed(0)} kcal`;
+                    }
+
+                    const dateIndex = context.dataIndex;
+                    const mealIndex = context.datasetIndex; // 這裡假設堆疊順序對應 mealsByDay 陣列順序
+                    const dateLabel = context.chart.data.labels[dateIndex];
+                    const mealsForDay = mealsByDay.get(dateLabel);
+                    
+                    if (mealsForDay && mealsForDay[mealIndex]) {
+                        const meal = mealsForDay[mealIndex];
+                        return `${meal.Name || '未命名餐點'}: ${meal.TotalCalories.toFixed(0)} kcal`;
+                    }
+                    return `餐點: ${context.parsed.y.toFixed(0)} kcal`;
+                }
+            };
+
             if (myChart) {
                 myChart.data.labels = labels;
                 myChart.data.datasets = datasets;
+                // 必須更新 options 才能讓 tooltip callback 抓到新的 mealsByDay 閉包
+                myChart.options.plugins.tooltip.callbacks = tooltipCallbacks;
                 myChart.update();
             } else {
                 myChart = new Chart(ctx, {
@@ -899,22 +928,10 @@
                         maintainAspectRatio: false, 
                         plugins: {
                             tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        let label = context.dataset.label || '';
-                                        if (label && context.dataset.type !== 'line') {
-                                            label += ': ';
-                                        }
-                                        if (context.parsed.y !== null && context.dataset.type !== 'line') {
-                                            label += `${context.parsed.y.toFixed(0)} kcal`;
-                                        }
-                                        if(context.dataset.type === 'line') return null;
-                                        return label;
-                                    }
-                                }
+                                callbacks: tooltipCallbacks
                             },
                             legend: {
-                                display: false 
+                                display: false // 隱藏圖例，因為顏色是隨機的
                             }
                         },
                         scales: {
@@ -1513,9 +1530,11 @@
         // ==== 更新登入 UI ====
         function updateAuthUI(user) {
             const userInfoDiv = document.getElementById('userInfo');
-            const signInButton = document.getElementById('googleSignInButton');
+            const authSection = document.getElementById('authSection');
             const userDisplayName = document.getElementById('userDisplayName');
+            const signInButton = document.getElementById('googleSignInButton');
             const signInMessage = document.getElementById('googleSignInMessage');
+            const profileLoginSection = document.getElementById('profileLoginSection');
             const deleteSection = document.getElementById('deleteAccountSection');
             
             signInButton.disabled = false;
@@ -1524,16 +1543,16 @@
                 // 已登入 Google 帳號
                 const displayName = userProfile?.nickname || user.displayName || user.email || '已登入使用者';
                 userDisplayName.textContent = `歡迎, ${displayName}!`;
-                userInfoDiv.classList.remove('hidden');
-                signInButton.classList.add('hidden');
-                signInMessage.textContent = '';
-                deleteSection.classList.remove('hidden'); // Show delete section
+                
+                authSection.classList.remove('hidden'); // 首頁顯示歡迎
+                profileLoginSection.classList.add('hidden'); // Profile 隱藏登入按鈕
+                deleteSection.classList.remove('hidden'); // Profile 顯示刪除按鈕
             } else {
                 // 匿名登入
-                userInfoDiv.classList.add('hidden');
-                signInButton.classList.remove('hidden');
+                authSection.classList.add('hidden'); // 首頁隱藏歡迎 (或只顯示圖示，由 header 本身控制)
+                profileLoginSection.classList.remove('hidden'); // Profile 顯示登入按鈕
                 signInMessage.textContent = '登入 Google 帳號以跨裝置同步您的記錄。';
-                deleteSection.classList.add('hidden'); // Hide delete section
+                deleteSection.classList.add('hidden'); // Profile 隱藏刪除按鈕
             }
         }
 
