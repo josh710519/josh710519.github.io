@@ -361,7 +361,17 @@
             box.classList.remove('hidden');
             setTimeout(() => {
                 box.classList.add('hidden');
-            }, 3000);
+            }, 5000); // Increased timeout for longer messages
+        }
+
+        // ==== 輔助函數：處理 Firebase 網域錯誤 ====
+        function getFriendlyErrorMessage(error) {
+            // 檢查是否為 API Key 的 Referer 限制或 Firebase Auth Domain 限制
+            if ((error.message && error.message.includes('requests-from-referer') && error.message.includes('blocked')) || 
+                error.code === 'auth/unauthorized-domain') {
+                return `網域未授權。請複製此網址：【${window.location.hostname}】並新增至 Firebase Console > Authentication > Settings > Authorized domains。`;
+            }
+            return error.message;
         }
 
         // ==== 隨機顏色函數 ====
@@ -1353,7 +1363,8 @@
                 } else {
                     console.error("Google 登入失敗:", error);
                     message.textContent = '登入失敗，請重試。';
-                    showMessage(`登入失敗: ${error.message}`, true);
+                    // 使用友善錯誤訊息
+                    showMessage(`登入失敗: ${getFriendlyErrorMessage(error)}`, true);
                     button.disabled = false;
                     anonymousUserIdBeforeSignIn = null; 
                 }
@@ -1604,7 +1615,8 @@
                     currentUser = userCredential.user;
                 } catch (anonError) {
                     console.error("匿名登入失敗:", anonError);
-                    showMessage("無法匿名登入，APP 功能將受限。", true);
+                    // 使用友善錯誤訊息
+                    showMessage(`無法匿名登入: ${getFriendlyErrorMessage(anonError)}`, true);
                     return;
                 }
             }
@@ -1636,7 +1648,7 @@
 
             } catch (error) {
                 console.error("Firebase 初始化失敗:", error);
-                showMessage(`Firebase 初始化失敗！請檢查配置。${error.message}`, true);
+                showMessage(`Firebase 初始化失敗！${getFriendlyErrorMessage(error)}`, true);
             }
         }
         
@@ -1666,7 +1678,8 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
-          navigator.serviceWorker.register('/service-worker.js')
+          // *** 修改：改為相對路徑 './' 解決 origin 錯誤 ***
+          navigator.serviceWorker.register('./service-worker.js')
             .catch(function(err) {
               console.error('Service Worker 註冊失敗:', err);
             });
