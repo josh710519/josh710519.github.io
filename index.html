@@ -320,7 +320,10 @@
 
                 <!-- 食物細項列表 -->
                 <div>
-                    <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">食物內容 & 熱量</h3>
+                    <div class="flex justify-between items-end mb-3">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider">食物內容 & 熱量</h3>
+                        <span class="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">依熱量排序</span>
+                    </div>
                     <div id="editItemsList" class="space-y-3">
                         <!-- JS 動態填入 -->
                     </div>
@@ -480,8 +483,7 @@
             const userQuery = "請詳細分析這張圖片中的所有食物。所有食物名稱嚴格使用繁體中文。只回傳 JSON 格式的結果，不包含任何說明或 Markdown 語法。";
             const systemPrompt = "你是一位精準的營養學家。根據圖片，識別所有食物。重點：所有食物名稱必須翻譯成繁體中文（Traditional Chinese）。對於每個食物，估算其名稱和總熱量（kcal）以及估計份量（以公克 'g' 為單位）。";
             
-            // (已填入您提供的金鑰)
-            const apiKey = "AIzaSyCuoQv7FoImHfZ9G7pE0DNKLQnGkmkMgBQ"; 
+            const apiKey = "AIzaSyCN7hEfzCMfN6WkCpo30MtAO_a-2FblCKo"; 
             
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
             const responseSchema = {
@@ -560,8 +562,7 @@
             const userQuery = `這是我的一餐食物清單：${mealJson}。請根據這個清單，用繁體中文提供一段簡短（約 2-3 句）的營養總結，並給出一個具體的改進建議。`;
             const systemPrompt = "你是一位友善且鼓勵人心的營養師。你的回覆應該簡潔、正面，並專注於幫助使用者做出更健康的選擇。";
             
-            // (已填入您提供的金鑰)
-            const apiKey = "AIzaSyCuoQv7FoImHfZ9G7pE0DNKLQnGkmkMgBQ"; 
+            const apiKey = "AIzaSyCN7hEfzCMfN6WkCpo30MtAO_a-2FblCKo"; 
             
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
             const payload = {
@@ -1242,9 +1243,14 @@
                     return;
                 }
                 
+                // *** 修改：前端排序 (熱量高 -> 低) ***
+                let itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // 依照 CaloriesPerServing 降序排列
+                itemsData.sort((a, b) => (b.CaloriesPerServing || 0) - (a.CaloriesPerServing || 0));
+
                 let html = '';
-                snapshot.docs.forEach(doc => {
-                    const item = { id: doc.id, ...doc.data() };
+                itemsData.forEach(item => {
                     const name = item.Name || '未知食物';
                     const qty = item.Quantity || 0;
                     const cals = item.CaloriesPerServing || 0;
