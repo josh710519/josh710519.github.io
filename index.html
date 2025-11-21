@@ -4,8 +4,15 @@
 <head>
     <link rel="manifest" href="/manifest.json">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#FF9800">
+    
+    <!-- iOS 專用設定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AI熱量追蹤">
+    <link rel="apple-touch-icon" href="https://josh710519.github.io/icons/icon-192.png">
+    
     <title>Gemini AI 熱量追蹤器</title>
     <!-- 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -17,6 +24,8 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f7f7f9;
+            /* iOS 底部安全區域修正 */
+            padding-bottom: env(safe-area-inset-bottom);
         }
         .loading-dot {
             animation: bounce 1s infinite;
@@ -50,10 +59,11 @@
         }
     </style>
 </head>
-<body class="p-4 sm:p-6 md:p-8">
+<body class="p-4 sm:p-6 md:p-8 pt-safe-top"> 
+    <!-- pt-safe-top 是一個概念，實際透過下面的 CSS 處理頂部 -->
 
     <div id="app" class="max-w-xl mx-auto pb-24">
-        <header class="mb-8 p-4 bg-white rounded-2xl shadow-lg border border-gray-100">
+        <header class="mb-8 p-4 bg-white rounded-2xl shadow-lg border border-gray-100 mt-4"> <!-- 增加 mt-4 避開狀態列 -->
             <div class="flex justify-between items-center mb-4">
                 <div>
                     <h1 class="text-3xl font-extrabold text-blue-700 tracking-tight">🍽️ 美食熱量分析</h1>
@@ -1185,19 +1195,13 @@
                             </div>
                             <div class="flex-grow min-w-0">
                                 <p class="font-bold text-gray-800 truncate text-sm group-hover:text-blue-700">${meal.Name || '無標題餐點'}</p>
-                                ${meal.Location ? `<p class="text-xs text-gray-500 truncate mt-0.5 flex items-center"><svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>${meal.Location}</p>` : ''}
+                                ${meal.Location ? `<p class="text-xs text-gray-500 truncate mt-0.5 flex items-center"><svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 11-11.314 0L13.414 5.314l4.243 4.243"></path></svg>${meal.Location}</p>` : ''}
                             </div>
-                            <div class="text-right">
-                                <span class="block text-lg font-extrabold text-gray-900 group-hover:text-blue-600">${meal.TotalCalories ? meal.TotalCalories.toFixed(0) : '?'}</span>
-                                <span class="text-xs text-gray-400 font-medium">kcal</span>
-                            </div>
+                            <span class="text-base font-extrabold text-red-600 whitespace-nowrap">${meal.TotalCalories ? meal.TotalCalories.toFixed(0) : '?'} <span class="text-xs font-normal text-red-400">kcal</span></span>
                         </button>
                     `;
                 });
                 historyList.innerHTML = html;
-                
-                // 更新圖表 (這裡仍需傳遞所有資料以計算正確的歷史，但為了簡單起見，這裡只用前50筆畫圖，或者保持後端查詢一致)
-                // 為了圖表正確性，理想上應該分開查詢，但在前端簡單實作中，這裡使用取回的資料更新
                 updateChart(allMeals);
 
             }, (error) => {
@@ -1209,29 +1213,23 @@
         
         // ==== *** 新增：編輯餐點功能區塊 *** ====
         
-        // 1. 開啟編輯彈窗 (已修改：接收標題與日期)
-        window.openEditModal = async function(mealId, imgSrc, title, dateStr) { 
+        // 1. 開啟編輯彈窗
+        window.openEditModal = async function(mealId, imgSrc, mealName, mealDate) { // *** 修改：設為 async ***
             currentEditingMealId = mealId;
-            const imgEl = document.getElementById('editMealImage');
-            imgEl.src = imgSrc;
+            document.getElementById('editMealImage').src = imgSrc;
+            document.getElementById('editMealTitleText').textContent = mealName; // 標題
+            document.getElementById('editMealDateDisplay').textContent = mealDate; // 日期
             
-            // 設定標題文字
-            document.getElementById('editMealTitleText').textContent = title || '未命名餐點';
-            document.getElementById('editMealDateDisplay').textContent = dateStr || '';
-
-            document.getElementById('editItemsList').innerHTML = '<div class="flex justify-center py-4"><span class="loading-dot w-2 h-2 bg-gray-400 rounded-full mx-1"></span><span class="loading-dot w-2 h-2 bg-gray-400 rounded-full mx-1"></span><span class="loading-dot w-2 h-2 bg-gray-400 rounded-full mx-1"></span></div>';
+            document.getElementById('editItemsList').innerHTML = '<p class="text-center text-gray-500 py-8">正在載入食物細項...</p>';
             document.getElementById('editMealModal').classList.remove('hidden');
             
-            // 載入餐點地點
-            document.getElementById('editMealLocation').value = ''; 
+            // *** 新增：載入餐點地點 ***
+            document.getElementById('editMealLocation').value = ''; // 先清空
             try {
                 const mealDocRef = doc(db, `/artifacts/${appId}/users/${userId}/Meals`, mealId);
                 const mealSnap = await getDoc(mealDocRef);
                 if (mealSnap.exists()) {
-                    const data = mealSnap.data();
-                    document.getElementById('editMealLocation').value = data.Location || '';
-                    // 如果列表沒傳標題，這裡再補一次
-                    if(!title) document.getElementById('editMealTitleText').textContent = data.Name || '未命名餐點';
+                    document.getElementById('editMealLocation').value = mealSnap.data().Location || '';
                 }
             } catch (error) {
                 console.error("載入餐點地點失敗:", error);
@@ -1256,55 +1254,45 @@
             try {
                 const snapshot = await getDocs(q);
                 if (snapshot.empty) {
-                    itemsListDiv.innerHTML = '<p class="text-center text-gray-500 text-sm py-4">找不到食物細項。</p>';
+                    itemsListDiv.innerHTML = '<p class="text-center text-gray-500">找不到食物細項。可能是舊資料或已被刪除。</p>';
                     return;
                 }
                 
-                // *** 修改：前端排序 (熱量高 -> 低) ***
-                let itemsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                
-                // 依照 CaloriesPerServing 降序排列
-                itemsData.sort((a, b) => (b.CaloriesPerServing || 0) - (a.CaloriesPerServing || 0));
+                const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // 依照熱量排序 (前端排序即可)
+                items.sort((a, b) => (b.CaloriesPerServing || 0) - (a.CaloriesPerServing || 0));
 
                 let html = '';
-                itemsData.forEach(item => {
+                items.forEach(item => {
                     const name = item.Name || '未知食物';
                     const qty = item.Quantity || 0;
                     const cals = item.CaloriesPerServing || 0;
+                    // *** 新增：讀取每公克熱量 ***
                     const calPerGram = item.CaloriesPerGram || 0; 
                     
                     html += `
-                        <div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm space-y-3" id="edit-item-${item.id}">
+                        <div class="p-4 border border-gray-100 rounded-xl bg-white shadow-sm space-y-3 transition hover:shadow-md" id="edit-item-${item.id}">
                             <div class="flex justify-between items-start">
-                                <p class="font-bold text-gray-800">${name}</p>
-                                <button onclick="deleteMealItem('${item.id}')" class="text-gray-400 hover:text-red-500 transition">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                </button>
+                                <p class="font-bold text-gray-800 text-lg">${name}</p>
+                                <span class="bg-red-50 text-red-600 text-xs px-2 py-1 rounded-full font-bold">${cals.toFixed(0)} kcal</span>
                             </div>
                             <div class="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">份量 (g)</label>
-                                    <div class="relative">
-                                        <input type="number" id="qty-${item.id}" 
-                                            value="${qty}" 
-                                            class="w-full text-sm p-2 pl-2 pr-8 border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
-                                            data-cal-per-gram="${calPerGram}"  
-                                            oninput="recalculateItemCalories('${item.id}')">
-                                        <span class="absolute right-3 top-2 text-xs text-gray-400">g</span>
-                                    </div>
+                                <div class="bg-gray-50 p-2 rounded-lg">
+                                    <label class="text-[10px] font-bold text-gray-400 uppercase block mb-1">份量 (g)</label>
+                                    <input type="number" id="qty-${item.id}" 
+                                           value="${qty}" 
+                                           class="w-full text-sm p-1 bg-transparent border-b border-gray-300 focus:border-blue-500 outline-none font-mono"
+                                           data-cal-per-gram="${calPerGram}"  
+                                           oninput="recalculateItemCalories('${item.id}')"> 
                                 </div>
-                                <div>
-                                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">熱量 (kcal)</label>
-                                    <div class="relative">
-                                        <input type="number" id="cals-${item.id}" 
-                                               value="${cals.toFixed(0)}" 
-                                               class="w-full text-sm p-2 pl-2 pr-8 border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition font-bold text-gray-700">
-                                        <span class="absolute right-3 top-2 text-xs text-gray-400">卡</span>
-                                    </div>
+                                <div class="bg-gray-50 p-2 rounded-lg">
+                                    <label class="text-[10px] font-bold text-gray-400 uppercase block mb-1">熱量 (kcal)</label>
+                                    <input type="number" id="cals-${item.id}" value="${cals.toFixed(0)}" class="w-full text-sm p-1 bg-transparent border-b border-gray-300 focus:border-blue-500 outline-none font-mono font-bold text-gray-800">
                                 </div>
                             </div>
-                            <div class="flex justify-end">
-                                <button onclick="updateMealItem('${item.id}')" class="text-xs font-bold text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition">確認修改</button>
+                            <div class="flex justify-end space-x-3 pt-1">
+                                <button onclick="deleteMealItem('${item.id}')" class="text-xs font-bold text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition">刪除</button>
+                                <button onclick="updateMealItem('${item.id}')" class="text-xs font-bold text-blue-600 hover:text-blue-800 px-3 py-1 bg-blue-50 rounded-lg hover:bg-blue-100 transition">更新數值</button>
                             </div>
                         </div>
                     `;
@@ -1313,7 +1301,7 @@
                 
             } catch (error) {
                 console.error("載入食物細項失敗:", error);
-                itemsListDiv.innerHTML = `<p class="text-red-500 text-sm">載入失敗: ${error.message}</p>`;
+                itemsListDiv.innerHTML = `<p class="text-red-500">載入細項失敗: ${error.message}</p>`;
             }
         }
         
@@ -1439,9 +1427,6 @@
             
             const mealId = currentEditingMealId;
             
-            const confirmDelete = confirm("確定要刪除這筆餐點記錄嗎？此操作無法復原。");
-            if (!confirmDelete) return;
-
             try {
                 const batch = writeBatch(db);
                 
@@ -1460,7 +1445,7 @@
                 // 3. 執行批次刪除
                 await batch.commit();
                 
-                showMessage("餐點已刪除", false);
+                showMessage("整筆餐點記錄已成功刪除！", false);
                 closeEditModal();
                 
             } catch (error) {
@@ -1487,15 +1472,11 @@
             message.textContent = '正在開啟 Google 登入...';
 
             try {
-                // 加入 log 以方便除錯
-                console.log("Attempting Google Sign-In with Popup...");
                 const result = await signInWithPopup(auth, provider);
                 message.textContent = '登入成功！';
                 showMessage("Google 登入成功！", false);
                 
             } catch (error) {
-                console.error("Google Sign-In Error Detail:", error); // 詳細 log
-                
                 // *** 核心：捕捉衝突錯誤 ***
                 if (error.code === 'auth/credential-already-in-use' || error.code === 'auth/account-exists-with-different-credential') {
                     console.warn("偵測到資料衝突:", error.code);
@@ -1507,9 +1488,9 @@
                     
                 } else {
                     console.error("Google 登入失敗:", error);
+                    const friendlyMsg = getFriendlyErrorMessage(error);
                     message.textContent = '登入失敗，請重試。';
-                    // 使用友善錯誤訊息
-                    showMessage(`登入失敗: ${getFriendlyErrorMessage(error)}`, true);
+                    showMessage(`登入失敗: ${friendlyMsg}`, true);
                     button.disabled = false;
                     anonymousUserIdBeforeSignIn = null; 
                 }
@@ -1527,32 +1508,80 @@
             }
         }
         
+        // ==== 刪除使用者帳號 ====
+        window.deleteUserAccount = async function() {
+            if (!auth.currentUser || auth.currentUser.isAnonymous) {
+                return showMessage("請先登入 Google 帳號才能刪除。", true);
+            }
+            
+            if (!confirm("您確定要永久刪除此帳號嗎？所有記錄將無法復原！")) {
+                return;
+            }
+
+            const deleteBtn = document.querySelector('#deleteAccountSection button');
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = "刪除中...";
+            
+            try {
+                const uid = auth.currentUser.uid;
+                
+                // 1. 先刪除 Firestore 資料
+                await deleteAllUserData(uid);
+                
+                // 2. 刪除 Authentication 帳號
+                await deleteUser(auth.currentUser);
+                
+                alert("帳號已成功刪除。感謝您的使用。");
+                window.location.reload(); // 重整頁面
+                
+            } catch (error) {
+                console.error("刪除帳號失敗:", error);
+                // 如果是因為需要重新認證 (requires-recent-login)
+                if (error.code === 'auth/requires-recent-login') {
+                     showMessage("為了安全，請重新登入後再執行刪除操作。", true);
+                     // 可以在這裡觸發重新登入流程，或提示使用者手動登出再登入
+                } else {
+                     showMessage(`刪除帳號失敗: ${error.message}`, true);
+                }
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = "永久刪除我的帳號";
+            }
+        }
+        
         // ==== 更新登入 UI ====
         function updateAuthUI(user) {
             const userInfoDiv = document.getElementById('userInfo');
             const authSection = document.getElementById('authSection');
             const userDisplayName = document.getElementById('userDisplayName');
-            const signInButton = document.getElementById('googleSignInButton');
-            const signInMessage = document.getElementById('googleSignInMessage');
-            const profileLoginSection = document.getElementById('profileLoginSection');
-            const deleteSection = document.getElementById('deleteAccountSection');
             
-            signInButton.disabled = false;
+            const profileLoginSection = document.getElementById('profileLoginSection');
+            const deleteAccountSection = document.getElementById('deleteAccountSection');
 
             if (user && !user.isAnonymous) {
                 // 已登入 Google 帳號
                 const displayName = userProfile?.nickname || user.displayName || user.email || '已登入使用者';
                 userDisplayName.textContent = `歡迎, ${displayName}!`;
                 
-                authSection.classList.remove('hidden'); // 首頁顯示歡迎
-                profileLoginSection.classList.add('hidden'); // Profile 隱藏登入按鈕
-                deleteSection.classList.remove('hidden'); // Profile 顯示刪除按鈕
+                authSection.classList.remove('hidden'); // 顯示 Header 的歡迎訊息
+                
+                // 個人資料頁面：隱藏登入按鈕，顯示刪除按鈕
+                profileLoginSection.classList.add('hidden');
+                deleteAccountSection.classList.remove('hidden');
+
             } else {
-                // 匿名登入
-                authSection.classList.add('hidden'); // 首頁隱藏歡迎 (或只顯示圖示，由 header 本身控制)
-                profileLoginSection.classList.remove('hidden'); // Profile 顯示登入按鈕
-                signInMessage.textContent = '登入 Google 帳號以跨裝置同步您的記錄。';
-                deleteSection.classList.add('hidden'); // Profile 隱藏刪除按鈕
+                // 匿名或未登入
+                authSection.classList.add('hidden'); // 隱藏 Header 的歡迎訊息
+                
+                // 個人資料頁面：顯示登入按鈕，隱藏刪除按鈕
+                profileLoginSection.classList.remove('hidden');
+                deleteAccountSection.classList.add('hidden');
+                
+                // 重置按鈕狀態 (如果剛剛登出)
+                const btn = document.getElementById('googleSignInButton');
+                if(btn) {
+                    btn.disabled = false;
+                    document.getElementById('googleSignInMessage').textContent = '';
+                }
             }
         }
 
@@ -1577,41 +1606,6 @@
 
             await batch.commit();
             console.log(`已刪除使用者 ${uid} 的所有資料。`);
-        }
-        
-        // ==== 新增：刪除使用者帳號 ====
-        window.deleteUserAccount = async function() {
-            if (!auth.currentUser || auth.currentUser.isAnonymous) {
-                showMessage("只有已登入 Google 的使用者才能刪除帳號。", true);
-                return;
-            }
-
-            const confirmation = confirm("您確定要永久刪除您的帳號和所有資料嗎？此操作無法復原。");
-            if (!confirmation) {
-                return;
-            }
-
-            const user = auth.currentUser;
-            const uid = user.uid;
-
-            try {
-                showMessage("正在刪除您的資料...", false);
-                await deleteAllUserData(uid);
-                
-                showMessage("資料已刪除，正在刪除帳號...", false);
-                await deleteUser(user);
-                
-                hideProfileModal();
-                showMessage("您的帳號已成功刪除。", false);
-                // onAuthStateChanged will automatically handle signing in a new anonymous user.
-            } catch (error) {
-                console.error("刪除帳號失敗:", error);
-                let message = `刪除帳號失敗: ${error.message}`;
-                if (error.code === 'auth/requires-recent-login') {
-                    message = "此操作需要您最近曾登入。請先登出再重新登入一次，然後再嘗試刪除。";
-                }
-                showMessage(message, true);
-            }
         }
 
         // ==== 輔助函數：複製一個使用者的所有資料到另一個 ====
@@ -1750,7 +1744,7 @@
             if (mealSubscription) {
                 mealSubscription();
                 mealSubscription = null;
-                document.getElementById('pastMealsList').innerHTML = '<div class="flex justify-center py-4"><span class="loading-dot w-2 h-2 bg-blue-400 rounded-full mx-1"></span><span class="loading-dot w-2 h-2 bg-blue-400 rounded-full mx-1"></span><span class="loading-dot w-2 h-2 bg-blue-400 rounded-full mx-1"></span></div>';
+                document.getElementById('pastMealsList').innerHTML = '<p class="text-center text-gray-500">正在切換使用者...</p>';
                 document.getElementById('historyLoading').classList.remove('hidden');
             }
             
@@ -1762,8 +1756,7 @@
                     currentUser = userCredential.user;
                 } catch (anonError) {
                     console.error("匿名登入失敗:", anonError);
-                    // 使用友善錯誤訊息
-                    showMessage(`無法匿名登入: ${getFriendlyErrorMessage(anonError)}`, true);
+                    showMessage("無法匿名登入，APP 功能將受限。", true);
                     return;
                 }
             }
@@ -1795,7 +1788,7 @@
 
             } catch (error) {
                 console.error("Firebase 初始化失敗:", error);
-                showMessage(`Firebase 初始化失敗！${getFriendlyErrorMessage(error)}`, true);
+                showMessage(`Firebase 初始化失敗！請檢查配置。${error.message}`, true);
             }
         }
         
@@ -1805,9 +1798,9 @@
         window.updateSelectedMealData = updateSelectedMealData;
         window.signInWithGoogle = signInWithGoogle;
         window.signOutUser = signOutUser;
+        window.deleteUserAccount = deleteUserAccount;
         window.overwriteWithAnonymousData = overwriteWithAnonymousData;
         window.discardAnonymousData = discardAnonymousData;
-        window.deleteUserAccount = deleteUserAccount;
         window.openEditModal = openEditModal; 
         window.recalculateItemCalories = recalculateItemCalories; 
         window.updateMealItem = updateMealItem; 
@@ -1825,7 +1818,6 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
-          // *** 修改：改為相對路徑 './' 解決 origin 錯誤 ***
           navigator.serviceWorker.register('./service-worker.js')
             .catch(function(err) {
               console.error('Service Worker 註冊失敗:', err);
