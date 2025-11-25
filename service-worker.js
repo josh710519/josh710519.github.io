@@ -1,4 +1,5 @@
-const CACHE_NAME = 'ai-calorie-tracker-v1';
+
+const CACHE_NAME = 'ai-calorie-tracker-v2';
 const OFFLINE_URL = '/';
 
 self.addEventListener('install', event => {
