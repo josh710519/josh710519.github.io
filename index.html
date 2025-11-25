@@ -359,7 +359,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCredential, signOut, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp, setLogLevel, getDoc, setDoc, orderBy, getDocs, writeBatch, deleteDoc, where, updateDoc, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Global Vars
@@ -402,6 +402,7 @@
         function getFriendlyErrorMessage(error) {
             if ((error.message && error.message.includes('requests-from-referer') && error.message.includes('blocked')) || error.code === 'auth/unauthorized-domain') return `網域未授權。請至 Firebase Console 新增 Authorized Domain。`;
             if (error.message && error.message.includes('The requested action is invalid')) return 'API Key 設定受限。請檢查 Google Cloud Console。';
+            if (error.message && (error.message.includes('identitytoolkit') || error.message.includes('project-config') || error.message.includes('getProjectConfig'))) return 'API Key 限制過嚴。請至 Google Cloud Console 將 firebaseapp.com 加入白名單。';
             return error.message;
         }
 
@@ -851,9 +852,55 @@
 
         window.signInWithGoogle = async () => {
             if (auth.currentUser?.isAnonymous) anonymousUserIdBeforeSignIn = auth.currentUser.uid;
-            try { await signInWithPopup(auth, new GoogleAuthProvider()); showMessage('登入成功', false); }
-            catch (e) { if (e.code === 'auth/credential-already-in-use') { googleCredentialForMerge = GoogleAuthProvider.credentialFromError(e); document.getElementById('mergeModal').classList.remove('hidden'); } else showMessage(`登入失敗: ${getFriendlyErrorMessage(e)}`, true); }
+            
+            // Check if mobile device
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                // Use redirect for mobile PWA to avoid popup blocking
+                try {
+                    await signInWithRedirect(auth, new GoogleAuthProvider());
+                    // Code will stop here as page redirects
+                } catch (e) {
+                    showMessage(`Redirect 錯誤: ${getFriendlyErrorMessage(e)}`, true);
+                }
+            } else {
+                // Use popup for desktop
+                try { 
+                    await signInWithPopup(auth, new GoogleAuthProvider()); 
+                    showMessage('登入成功', false); 
+                } catch (e) { 
+                    if (e.code === 'auth/credential-already-in-use') { 
+                        googleCredentialForMerge = GoogleAuthProvider.credentialFromError(e); 
+                        document.getElementById('mergeModal').classList.remove('hidden'); 
+                    } else {
+                        showMessage(`登入失敗: ${getFriendlyErrorMessage(e)}`, true); 
+                    }
+                }
+            }
         }
+
+        // Handle Redirect Result on Page Load
+        async function handleRedirectResult() {
+            try {
+                const result = await getRedirectResult(auth);
+                if (result) {
+                    showMessage('Google 登入成功！', false);
+                    // Handle potential merge conflict logic here if needed, 
+                    // though getRedirectResult usually handles sign-in directly.
+                    // If complex merge logic is needed after redirect, we might need to store pre-redirect state in localStorage.
+                }
+            } catch (error) {
+                if (error.code === 'auth/credential-already-in-use') {
+                     googleCredentialForMerge = GoogleAuthProvider.credentialFromError(error);
+                     document.getElementById('mergeModal').classList.remove('hidden');
+                } else {
+                    console.error("Redirect Login Error:", error);
+                    // Don't show message for null result (normal load), only errors
+                }
+            }
+        }
+
         window.overwriteWithAnonymousData = async () => { document.getElementById('mergeModal').classList.add('hidden'); showMessage('覆蓋資料中...', false); try { const cred = await signInWithCredential(auth, googleCredentialForMerge); await deleteAllUserData(cred.user.uid); await copyUserData(anonymousUserIdBeforeSignIn, cred.user.uid); window.location.reload(); } catch(e) { showMessage('失敗', true); } }
         window.discardAnonymousData = async () => { document.getElementById('mergeModal').classList.add('hidden'); await signInWithCredential(auth, googleCredentialForMerge); window.location.reload(); }
         window.signOutUser = async () => { try { await signOut(auth); showMessage("已登出", false); window.location.reload(); } catch(e) { showMessage("登出失敗", true); } }
@@ -872,13 +919,17 @@
         window.onload = initFirebase;
         async function initFirebase() {
             const app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app);
+            
+            // Check for redirect result first
+            await handleRedirectResult();
+
             onAuthStateChanged(auth, async (u) => {
                  if (isHandlingConflict) return;
                  if (mealSubscription) mealSubscription();
                  if (weightSubscription) weightSubscription();
                  let curr = u;
-                 if (!curr) { try { curr = (await signInAnonymously(auth)).user; } catch(e){} }
-                 if (!curr) return; // Prevent crash if anon auth failed completely
+                 if (!curr) { try { curr = (await signInAnonymously(auth)).user; } catch(e){ console.error("Anon Auth Failed", e); showMessage(`匿名登入失敗: ${getFriendlyErrorMessage(e)}`, true); } }
+                 if (!curr) return; 
                  userId = curr.uid; updateAuthUI(curr); loadUserProfile(curr); 
                  mealSubscription = subscribeToMealsAndData(userId);
                  weightSubscription = subscribeToWeight(userId);
