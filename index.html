@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -700,6 +699,8 @@
                 }
                 
                 allAnalyzedItems = analysisData.foodItems;
+                // Sort items by estimated_calories in descending order
+                allAnalyzedItems.sort((a, b) => (b.estimated_calories || 0) - (a.estimated_calories || 0));
                 
                 let html = allAnalyzedItems.map((item, index) => {
                     const calories = item.estimated_calories || 0;
