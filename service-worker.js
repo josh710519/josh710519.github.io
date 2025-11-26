@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'ai-calorie-tracker-v3';
+const CACHE_NAME = 'ai-calorie-tracker-v4';
 const OFFLINE_URL = '/';
 
 // 定義需要快取的外部資源 (CDN)

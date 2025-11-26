@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -994,7 +995,15 @@
             const app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app);
             
             // Enable Offline Persistence
-            try { await enableIndexedDbPersistence(db); } catch (err) { console.warn("Persistence failed:", err); }
+            try {
+                await enableIndexedDbPersistence(db);
+            } catch (err) {
+                if (err.code == 'failed-precondition') {
+                    console.warn('多個分頁開啟導致離線持久化失敗');
+                } else if (err.code == 'unimplemented') {
+                    console.warn('瀏覽器不支援離線持久化');
+                }
+            }
 
             onAuthStateChanged(auth, async (u) => {
                  if (isHandlingConflict) return;
@@ -1013,10 +1022,63 @@
                  }
             });
         }
+        
+        async function deleteAllUserData(uid) {
+            if (!db || !uid) return;
+            const batch = writeBatch(db);
+            // Meals
+            (await getDocs(collection(db, `/artifacts/${appId}/users/${uid}/Meals`))).forEach(d => batch.delete(d.ref));
+            // FoodItems
+            (await getDocs(collection(db, `/artifacts/${appId}/users/${uid}/FoodItems`))).forEach(d => batch.delete(d.ref));
+            // WeightLogs
+            (await getDocs(collection(db, `/artifacts/${appId}/users/${uid}/WeightLogs`))).forEach(d => batch.delete(d.ref));
+            // Profile
+            batch.delete(doc(db, `/artifacts/${appId}/users/${uid}/Profile`, 'data'));
+            await batch.commit();
+        }
+
+        async function copyUserData(fromUid, toUid) {
+             if (!db || !fromUid || !toUid) return;
+             const batch = writeBatch(db);
+             const mealIdMap = new Map();
+
+             // Profile
+             const pSnap = await getDoc(doc(db, `/artifacts/${appId}/users/${fromUid}/Profile`, 'data'));
+             if(pSnap.exists()) batch.set(doc(db, `/artifacts/${appId}/users/${toUid}/Profile`, 'data'), pSnap.data());
+
+             // Meals
+             const mSnaps = await getDocs(collection(db, `/artifacts/${appId}/users/${fromUid}/Meals`));
+             mSnaps.forEach(md => {
+                 const newData = md.data(); newData.UserId = toUid;
+                 const newRef = doc(collection(db, `/artifacts/${appId}/users/${toUid}/Meals`));
+                 batch.set(newRef, newData); mealIdMap.set(md.id, newRef.id);
+             });
+
+             // FoodItems
+             const iSnaps = await getDocs(collection(db, `/artifacts/${appId}/users/${fromUid}/FoodItems`));
+             iSnaps.forEach(id => {
+                 const newData = id.data(); newData.UserId = toUid;
+                 if(newData.MealId && mealIdMap.has(newData.MealId)) newData.MealId = mealIdMap.get(newData.MealId);
+                 batch.set(doc(collection(db, `/artifacts/${appId}/users/${toUid}/FoodItems`)), newData);
+             });
+             
+             // WeightLogs
+             const wSnaps = await getDocs(collection(db, `/artifacts/${appId}/users/${fromUid}/WeightLogs`));
+             wSnaps.forEach(wd => {
+                 const newData = wd.data(); newData.UserId = toUid;
+                 batch.set(doc(collection(db, `/artifacts/${appId}/users/${toUid}/WeightLogs`)), newData);
+             });
+
+             await batch.commit();
+        }
     </script>
 
     <script>
-      if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
+      if ('serviceWorker' in navigator) {
+        const swUrl = new URL('./service-worker.js', window.location.href);
+        navigator.serviceWorker.register(swUrl)
+            .catch(err => console.error('Service Worker registration failed:', err));
+      }
     </script>
 </body>
 </html>
