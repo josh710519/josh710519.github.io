@@ -79,7 +79,7 @@
         <!-- 離線提示橫條 -->
         <div id="offlineBanner" class="fixed top-0 left-0 right-0 z-[60] bg-gray-800 text-white text-xs font-bold py-2 px-4 text-center hidden shadow-md flex items-center justify-center gap-2 max-w-md mx-auto">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
-            目前為離線模式，部分功能無法使用
+            目前為離線模式，僅顯示歷史記錄
         </div>
 
         <!-- 置頂導航列 -->
@@ -369,7 +369,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp, setLogLevel, getDoc, setDoc, orderBy, getDocs, writeBatch, deleteDoc, where, updateDoc, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp, setLogLevel, getDoc, setDoc, orderBy, getDocs, writeBatch, deleteDoc, where, updateDoc, limit, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Global Vars
         let db, auth, userId;
@@ -992,12 +992,20 @@
         async function initFirebase() {
             updateOnlineStatus(); // Check offline status on load
             const app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app);
+            
+            // Enable Offline Persistence
+            try { await enableIndexedDbPersistence(db); } catch (err) { console.warn("Persistence failed:", err); }
+
             onAuthStateChanged(auth, async (u) => {
                  if (isHandlingConflict) return;
                  if (mealSubscription) mealSubscription();
                  if (weightSubscription) weightSubscription();
                  let curr = u;
-                 if (!curr) { try { curr = (await signInAnonymously(auth)).user; } catch(e){} }
+                 if (!curr && navigator.onLine) { try { curr = (await signInAnonymously(auth)).user; } catch(e){} }
+                 
+                 // If offline and no curr, we might still have data in IndexedDB from previous session? 
+                 // Firebase Auth persists user in localStorage, so 'u' should be populated even if offline if previously logged in.
+                 
                  if(curr) {
                     userId = curr.uid; updateAuthUI(curr); loadUserProfile(curr); 
                     mealSubscription = subscribeToMealsAndData(userId);
