@@ -400,7 +400,11 @@
         }
 
         function getFriendlyErrorMessage(error) {
-            if ((error.message && error.message.includes('requests-from-referer') && error.message.includes('blocked')) || error.code === 'auth/unauthorized-domain') return `網域未授權。請至 Firebase Console 新增 Authorized Domain。`;
+            if ((error.message && error.message.includes('requests-from-referer') && error.message.includes('blocked')) || error.code === 'auth/unauthorized-domain') {
+                 const match = error.message.match(/referer-(.*?)-are-blocked/);
+                 const url = match ? match[1] : '此網域';
+                 return `預覽環境網域未授權。請至 Firebase Console > Authentication > Settings > Authorized domains 新增：${url}`;
+            }
             if (error.message && error.message.includes('The requested action is invalid')) return 'API Key 設定受限。請檢查 Google Cloud Console。';
             if (error.message && (error.message.includes('identitytoolkit') || error.message.includes('project-config') || error.message.includes('getProjectConfig'))) return 'API Key 限制過嚴。請至 Google Cloud Console 將 firebaseapp.com 加入白名單。';
             return error.message;
@@ -942,3 +946,4 @@
     </script>
 </body>
 </html>
+```
