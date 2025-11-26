@@ -60,12 +60,28 @@
         /* 底部導航樣式 */
         .nav-item.active { color: #2563EB; }
         .nav-item.active svg { stroke-width: 2.5; }
+
+        /* 離線提示樣式 */
+        #offlineBanner {
+            transition: transform 0.3s ease-in-out;
+        }
+        #offlineBanner.hidden {
+            transform: translateY(-100%);
+            display: flex; /* Override hidden for transform to work, but visually hide */
+            visibility: hidden;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen text-gray-800"> 
 
     <div id="app" class="max-w-md mx-auto pb-24 relative min-h-screen">
         
+        <!-- 離線提示橫條 -->
+        <div id="offlineBanner" class="fixed top-0 left-0 right-0 z-[60] bg-gray-800 text-white text-xs font-bold py-2 px-4 text-center hidden shadow-md flex items-center justify-center gap-2 max-w-md mx-auto">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+            目前為離線模式，部分功能無法使用
+        </div>
+
         <!-- 置頂導航列 -->
         <header class="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-100/50 px-6 py-4">
             <div class="flex justify-between items-center">
@@ -298,6 +314,7 @@
                             <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">身高 (cm)</label><input type="number" id="height" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0 placeholder-gray-300"></div>
                             <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">體重 (kg)</label><input type="number" id="weight" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0 placeholder-gray-300"></div>
                         </div>
+                        <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">目標體重 (kg)</label><input type="number" id="targetWeight" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0 placeholder-gray-300"></div>
                         <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">每週活動量</label><select id="activityLevel" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0 text-sm"><option value="1.2">久坐</option><option value="1.375">輕度</option><option value="1.55">中度</option><option value="1.725">高度</option><option value="1.9">極度</option></select></div>
                     </div>
 
@@ -404,11 +421,24 @@
             return error.message;
         }
 
+        function updateOnlineStatus() {
+           const banner = document.getElementById('offlineBanner');
+           if (navigator.onLine) {
+               banner.classList.add('hidden');
+               // Refresh charts or data if needed when coming online
+           } else {
+               banner.classList.remove('hidden');
+           }
+        }
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+
         let colorHue = 210;
         function getRandomColor() { colorHue = (colorHue + 137) % 360; return `hsla(${colorHue}, 85%, 65%, 0.8)`; }
 
         // --- Weight Logic ---
         window.saveWeightLog = async () => {
+             if (!navigator.onLine) return showMessage('離線模式無法儲存體重', true);
              const w = parseFloat(document.getElementById('newWeightInput').value);
              if(!w || w <= 0) return showMessage('請輸入有效體重');
              try {
@@ -422,13 +452,19 @@
 
         // --- Google Fit Sync Logic ---
         window.syncGoogleFitData = async () => {
+            if (!navigator.onLine) return showMessage('離線模式無法同步', true);
             if (!googleAccessToken) {
-                return showMessage('請重新使用 Google 登入以獲取同步權限', true);
+                const proceed = confirm("為了讀取 Google Fit 體重數據，需要您再次確認 Google 授權。\n\n點擊「確定」後將彈出登入視窗，請選擇您的帳號。");
+                if (!proceed) return;
+                
+                await signInWithGoogle();
+                // 如果登入後還是沒有 Token (例如使用者取消)，則中止
+                if (!googleAccessToken) return showMessage('未取得授權，無法同步', true);
             }
             
             const btn = document.querySelector('button[onclick="syncGoogleFitData()"]');
             const originalText = btn.innerHTML;
-            btn.innerHTML = '同步中...';
+            btn.innerHTML = '讀取中...';
             btn.disabled = true;
 
             try {
@@ -452,13 +488,21 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error('Google Fit API Request Failed');
+                    const errDetail = await response.json();
+                    console.error("Google Fit Error:", errDetail);
+                    // 特別偵測 403 錯誤，通常是 API 未啟用
+                    if (response.status === 403) {
+                         throw new Error('請至 Google Cloud Console 啟用 "Fitness API"');
+                    }
+                    throw new Error(`API 錯誤 (${response.status})`);
                 }
 
                 const data = await response.json();
                 
                 // Find the latest data point
                 let latestWeight = null;
+                let latestTime = 0;
+
                 if (data.bucket && data.bucket.length > 0) {
                     for (const bucket of data.bucket) {
                         if (bucket.dataset && bucket.dataset.length > 0) {
@@ -467,7 +511,12 @@
                                     for (const p of ds.point) {
                                         if (p.value && p.value.length > 0) {
                                             // com.google.weight value is in kg (fpVal)
-                                            latestWeight = p.value[0].fpVal;
+                                            // 找時間最晚的一筆
+                                            const pTime = parseInt(p.startTimeNanos || p.endTimeNanos) / 1000000;
+                                            if (pTime > latestTime) {
+                                                latestWeight = p.value[0].fpVal;
+                                                latestTime = pTime;
+                                            }
                                         }
                                     }
                                 }
@@ -480,14 +529,14 @@
                     // Update input and save
                     document.getElementById('newWeightInput').value = latestWeight.toFixed(1);
                     await saveWeightLog(); // This handles saving to Firestore and updating UI
-                    showMessage(`已從 Google Fit 同步: ${latestWeight.toFixed(1)}kg`, false);
+                    showMessage(`已同步最新體重: ${latestWeight.toFixed(1)}kg`, false);
                 } else {
-                    showMessage('最近 30 天無 Google Fit 體重資料', true);
+                    showMessage('Google Fit 最近 30 天無體重資料', true);
                 }
 
             } catch (error) {
                 console.error(error);
-                showMessage('同步失敗，請檢查權限或重新登入', true);
+                showMessage(`同步失敗: ${error.message}`, true);
             } finally {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
@@ -530,9 +579,13 @@
             const labels = [];
             const calorieData = [];
             const weightData = [];
+            const targetWeightData = [];
             
             const today = new Date();
             today.setHours(0,0,0,0);
+
+            // Get target weight from profile
+            const currentTargetWeight = userProfile?.targetWeight ? parseFloat(userProfile.targetWeight) : null;
 
             if (range === '7d' || range === '30d') {
                 const days = range === '7d' ? 7 : 30;
@@ -544,6 +597,8 @@
                     d.setDate(today.getDate() - i);
                     labels.push(d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }));
                     
+                    targetWeightData.push(currentTargetWeight);
+
                     // Filter Calories for this day
                     const dayStart = new Date(d); dayStart.setHours(0,0,0,0);
                     const dayEnd = new Date(d); dayEnd.setHours(23,59,59,999);
@@ -556,17 +611,6 @@
                     calorieData.push(dailyCal);
 
                     // Filter Weight for this day (Last known weight logic for continuous line)
-                    // Logic: Find the last weight log recorded on or before this day
-                    const weightLog = allWeightsData.filter(w => {
-                         const wDate = w.date ? w.date.toDate() : new Date();
-                         return wDate <= dayEnd;
-                    }).pop(); // Get the last one
-                    
-                    // If we want to strictly show only records on that day:
-                    // const exactWeightLog = allWeightsData.find(...)
-                    // But for trend lines, usually last known is better. 
-                    // However, to strictly align with "interval's last record" for daily view, let's look for exact day first.
-                    // If Chart.js spanGaps is true, we can push null if no record exists on that exact day.
                     const exactDayLog = allWeightsData.filter(w => {
                         const wDate = w.date ? w.date.toDate() : new Date();
                         return wDate >= dayStart && wDate <= dayEnd;
@@ -582,21 +626,16 @@
                     d.setMonth(today.getMonth() - i);
                     const label = d.toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric' });
                     labels.push(label.split('/')[1] + '月'); // Just Month name
+                    targetWeightData.push(currentTargetWeight);
 
                     const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
                     const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
 
-                    // Calories: Average Daily Intake for that month OR Total? 
-                    // Usually total is too big, Average is better for comparison.
                     const monthlyMeals = allMealsData.filter(m => {
                         const mDate = m.CreatedAt ? m.CreatedAt.toDate() : new Date();
                         return mDate >= monthStart && mDate <= monthEnd;
                     });
                     
-                    // To get daily average, we need to know how many unique days had logs, or just divide by 30?
-                    // Let's do simple Total for the month to see magnitude, OR Average per logged entry?
-                    // Let's do Average daily calorie (Sum / Days in month) might be too small if only 1 day logged.
-                    // Let's do Average of the logs.
                     const totalCal = monthlyMeals.reduce((sum, m) => sum + (m.TotalCalories || 0), 0);
                     // Group by day to get daily average
                     const uniqueDays = new Set(monthlyMeals.map(m => (m.CreatedAt ? m.CreatedAt.toDate().getDate() : 1))).size;
@@ -611,11 +650,11 @@
                 }
             }
 
-            return { labels, calorieData, weightData };
+            return { labels, calorieData, weightData, targetWeightData };
         }
 
         function updateAllCharts() {
-            const { labels, calorieData, weightData } = generateChartData(currentChartRange);
+            const { labels, calorieData, weightData, targetWeightData } = generateChartData(currentChartRange);
 
             // 1. Update Calorie Chart
             const ctxCal = document.getElementById('calorieChart').getContext('2d');
@@ -655,22 +694,35 @@
             if (weightChart) {
                 weightChart.data.labels = labels;
                 weightChart.data.datasets[0].data = weightData;
+                weightChart.data.datasets[1].data = targetWeightData;
                 weightChart.update();
             } else {
                 weightChart = new Chart(ctxWt, {
                     type: 'line',
                     data: {
                         labels: labels,
-                        datasets: [{ 
-                            label: '體重', 
-                            data: weightData, 
-                            borderColor: '#2563EB', 
-                            backgroundColor: 'rgba(37, 99, 235, 0.1)', 
-                            tension: 0.4, 
-                            fill: true, 
-                            pointRadius: 4,
-                            spanGaps: true // Critical for connecting dots when data is null
-                        }]
+                        datasets: [
+                            { 
+                                label: '體重', 
+                                data: weightData, 
+                                borderColor: '#2563EB', 
+                                backgroundColor: 'rgba(37, 99, 235, 0.1)', 
+                                tension: 0.4, 
+                                fill: true, 
+                                pointRadius: 4,
+                                spanGaps: true 
+                            },
+                            { 
+                                label: '目標', 
+                                data: targetWeightData, 
+                                borderColor: '#EF4444', 
+                                borderDash: [5, 5], 
+                                borderWidth: 1.5, 
+                                pointRadius: 0, 
+                                fill: false,
+                                spanGaps: true
+                            }
+                        ]
                     },
                     options: { 
                         responsive: true, maintainAspectRatio: false, 
@@ -739,6 +791,7 @@
         }
         
         window.analyzeFood = async function() {
+            if (!navigator.onLine) return showMessage('離線模式無法使用 AI 分析', true);
             const btn = document.getElementById('analyzeButton'); const resultDiv = document.getElementById('analysisResult');
             btn.disabled = true; document.getElementById('loadingIndicator').classList.remove('hidden'); document.getElementById('resultsSection').classList.remove('hidden'); resultDiv.innerHTML = '';
             try {
@@ -762,6 +815,7 @@
         }
 
         window.getNutritionalAdvice = async function() {
+             if (!navigator.onLine) return showMessage('離線模式無法取得建議', true);
              const btn = document.getElementById('getAdviceButton'); const div = document.getElementById('adviceResult');
              btn.disabled = true; div.classList.remove('hidden'); div.innerHTML = '<span class="animate-pulse">AI 思考中...</span>';
              try { div.innerHTML = (await callGeminiTextAPI(currentMealData)).replace(/\n/g, '<br>'); } catch (error) { div.textContent = "無法取得建議"; } finally { btn.disabled = false; }
@@ -786,6 +840,7 @@
         }
 
         window.saveMeal = async function() {
+            if (!navigator.onLine) return showMessage('離線模式無法儲存餐點', true);
             if (!currentMealData.length) return showMessage('請勾選食物');
             const btn = document.getElementById('saveButton'); btn.disabled = true;
             try {
@@ -815,6 +870,8 @@
             if (snap.exists()) {
                 userProfile = snap.data();
                 ['nickname','gender','age','height','weight','activityLevel'].forEach(k => document.getElementById(k).value = userProfile[k] || (k==='gender'?'male':''));
+                // NEW: Load Target Weight
+                document.getElementById('targetWeight').value = userProfile.targetWeight || '';
                 dailyCalorieTarget = calculateTDEE(userProfile);
             } else {
                 document.getElementById('nickname').value = user.displayName || '';
@@ -825,12 +882,21 @@
         }
 
         window.saveUserProfile = async function() {
-            const data = { nickname: document.getElementById('nickname').value, gender: document.getElementById('gender').value, age: document.getElementById('age').value, height: document.getElementById('height').value, weight: document.getElementById('weight').value, activityLevel: document.getElementById('activityLevel').value };
+            const data = { 
+                nickname: document.getElementById('nickname').value, 
+                gender: document.getElementById('gender').value, 
+                age: document.getElementById('age').value, 
+                height: document.getElementById('height').value, 
+                weight: document.getElementById('weight').value, 
+                targetWeight: document.getElementById('targetWeight').value, // NEW
+                activityLevel: document.getElementById('activityLevel').value 
+            };
             if (!data.age || !data.height || !data.weight) return showMessage("請填寫完整數值", true);
             await setDoc(doc(db, `/artifacts/${appId}/users/${userId}/Profile`, 'data'), data, { merge: true });
             if (auth.currentUser && !auth.currentUser.isAnonymous && data.nickname !== auth.currentUser.displayName) await updateProfile(auth.currentUser, { displayName: data.nickname });
             userProfile = data; dailyCalorieTarget = calculateTDEE(data); updateDashboardUI(); updateAuthUI(auth.currentUser);
             if (myChart) { myChart.data.datasets.find(ds => ds.type === 'line').data = myChart.data.labels.map(() => dailyCalorieTarget); myChart.update(); }
+            updateAllCharts(); // Update weight chart too
             hideProfileModal(); showMessage("設定已更新", false);
             document.getElementById('currentWeightDisplay').textContent = data.weight;
         }
@@ -892,6 +958,7 @@
         window.deleteEntireMeal = async () => { const batch = writeBatch(db); batch.delete(doc(db, `/artifacts/${appId}/users/${userId}/Meals`, currentEditingMealId)); (await getDocs(query(collection(db, `/artifacts/${appId}/users/${userId}/FoodItems`), where("MealId", "==", currentEditingMealId)))).forEach(d => batch.delete(d.ref)); await batch.commit(); document.getElementById('editMealModal').classList.add('hidden'); showMessage('記錄已刪除', false); }
 
         window.signInWithGoogle = async () => {
+            if (!navigator.onLine) return showMessage('離線模式無法登入', true);
             if (auth.currentUser?.isAnonymous) anonymousUserIdBeforeSignIn = auth.currentUser.uid;
             try { 
                 const provider = new GoogleAuthProvider();
@@ -923,6 +990,7 @@
 
         window.onload = initFirebase;
         async function initFirebase() {
+            updateOnlineStatus(); // Check offline status on load
             const app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app);
             onAuthStateChanged(auth, async (u) => {
                  if (isHandlingConflict) return;
