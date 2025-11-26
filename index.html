@@ -1,29 +1,944 @@
-        async function initFirebase() {
-            const app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app);
-            onAuthStateChanged(auth, async (u) => {
-                 if (isHandlingConflict) return;
-                 if (mealSubscription) { mealSubscription(); mealSubscription = null; }
-                 if (weightSubscription) { weightSubscription(); weightSubscription = null; }
-                 
-                 let curr = u;
-                 if (!curr) { 
-                    try { 
-                        const result = await signInAnonymously(auth);
-                        curr = result.user; 
-                    } catch(e){
-                        console.error("Auto-login failed:", e);
-                        // 顯示錯誤但不崩潰，允許使用者稍後重試或檢查設定
-                        showMessage(`初始化失敗: ${getFriendlyErrorMessage(e)}`, true);
-                        return;
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <link rel="manifest" href="/manifest.json">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#ffffff">
+    
+    <!-- iOS 專用設定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="AI熱量追蹤">
+    <link rel="apple-touch-icon" href="https://josh710519.github.io/icons/icon-192.png">
+    
+    <title>Gemini AI 熱量追蹤器</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 Chart.js (用於圖表) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 使用 Inter 字體 -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            /* iOS 底部安全區域修正 */
+            padding-bottom: env(safe-area-inset-bottom);
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .loading-dot { animation: bounce 1s infinite; }
+        .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+        .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-5px); }
+        }
+        
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.4);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .btn-press { transition: transform 0.1s ease-in-out; }
+        .btn-press:active { transform: scale(0.96); }
+        
+        .custom-checkbox:checked {
+            background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+            background-size: 100% 100%;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        /* 底部導航樣式 */
+        .nav-item.active { color: #2563EB; }
+        .nav-item.active svg { stroke-width: 2.5; }
+
+        /* Chart Range Toggle */
+        .range-btn {
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6B7280;
+            transition: all 0.2s;
+        }
+        .range-btn.active {
+            background-color: #2563EB;
+            color: white;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800"> 
+
+    <div id="app" class="max-w-md mx-auto pb-24 relative min-h-screen">
+        
+        <!-- 置頂導航列 -->
+        <header class="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-100/50 px-6 py-4">
+            <div class="flex justify-between items-center">
+                <h1 class="text-xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
+                    <span class="text-2xl">🥗</span> FoodCC
+                </h1>
+                <div class="flex items-center gap-3">
+                    <div id="authSection" class="hidden">
+                        <span id="userDisplayName" class="hidden text-xs font-semibold text-gray-600">User</span>
+                    </div>
+                    <button onclick="showProfileModal(true)" class="btn-press w-10 h-10 flex items-center justify-center bg-white rounded-full text-gray-500 hover:text-blue-600 border border-gray-100 shadow-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要內容區域 -->
+        <main class="mt-4 px-6 relative">
+
+            <!-- VIEW: 首頁 (Dashboard) -->
+            <div id="view-home" class="view-section space-y-6 animate-fade-in">
+                <!-- 儀表板 -->
+                <section class="relative overflow-hidden bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl shadow-xl shadow-blue-500/20 text-white p-6">
+                    <div class="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
+                    <div class="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/30 rounded-full blur-2xl"></div>
+                    <div class="relative z-10">
+                        <div class="flex justify-between items-start mb-6">
+                            <div>
+                                <p class="text-blue-100 text-xs font-bold uppercase tracking-wider mb-1">今日剩餘額度</p>
+                                <h2 id="remainingCalories" class="text-5xl font-black tracking-tighter tabular-nums">...</h2>
+                            </div>
+                            <div class="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-black/20 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+                                <p class="text-[10px] text-blue-100 font-medium mb-1">已攝取</p>
+                                <p id="todayTotal" class="text-lg font-bold tabular-nums">0</p>
+                            </div>
+                            <div class="bg-black/20 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+                                <p class="text-[10px] text-blue-100 font-medium mb-1">每日目標</p>
+                                <p id="calorieTarget" class="text-lg font-bold tabular-nums">...</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- 時間區間選擇器 -->
+                <div class="flex justify-center items-center bg-gray-200/50 p-1 rounded-full mx-auto w-fit">
+                    <button onclick="setChartRange('7d')" class="range-btn active" id="btn-7d">7天</button>
+                    <button onclick="setChartRange('30d')" class="range-btn" id="btn-30d">30天</button>
+                    <button onclick="setChartRange('1y')" class="range-btn" id="btn-1y">1年</button>
+                </div>
+
+                <!-- 熱量趨勢圖表 -->
+                <section class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100/50">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-sm font-bold text-gray-800">熱量趨勢</h3>
+                        <span id="calChartLabel" class="text-xs text-gray-400 font-medium">每日總和</span>
+                    </div>
+                    <div class="relative h-48 w-full">
+                        <canvas id="calorieChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- 體重追蹤 (NEW) -->
+                <section class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100/50">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-bold text-gray-800">體重記錄</h3>
+                        <button onclick="openWeightModal()" class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">
+                            + 記錄
+                        </button>
+                    </div>
+                    <div class="flex items-end gap-3 mb-4">
+                        <h2 id="currentWeightDisplay" class="text-3xl font-black text-gray-900 tracking-tight tabular-nums">--</h2>
+                        <span class="text-sm font-bold text-gray-400 mb-1.5">kg</span>
+                    </div>
+                    <div class="relative h-32 w-full">
+                        <canvas id="weightChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- 分析流程 (上傳/預覽/結果) -->
+                <div id="imagePreviewContainer" class="hidden bg-white p-4 rounded-3xl shadow-sm border border-gray-100 animate-fade-in mt-6">
+                    <div class="relative rounded-2xl overflow-hidden mb-4 bg-gray-100">
+                        <img id="imagePreview" class="w-full h-64 object-cover" alt="上傳圖片預覽">
+                    </div>
+                    <button onclick="analyzeFood()" id="analyzeButton" 
+                        class="btn-press w-full py-4 px-6 rounded-2xl font-bold text-white bg-gray-900 hover:bg-black transition shadow-lg shadow-gray-200 disabled:opacity-50 flex items-center justify-center gap-2">
+                        <span>開始分析</span>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </div>
+
+                <section id="resultsSection" class="hidden bg-white p-5 rounded-3xl shadow-lg border border-gray-100/50 mt-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                            <span>✨ 分析結果</span>
+                            <span id="loadingIndicator" class="hidden flex space-x-1"><span class="loading-dot w-1.5 h-1.5 bg-blue-500 rounded-full"></span><span class="loading-dot w-1.5 h-1.5 bg-blue-500 rounded-full"></span><span class="loading-dot w-1.5 h-1.5 bg-blue-500 rounded-full"></span></span>
+                        </h2>
+                        <div id="totalCaloriesDisplay" class="hidden bg-green-50 text-green-700 px-3 py-1 rounded-full text-sm font-bold border border-green-100"><span id="totalCaloriesValue">0</span> kcal</div>
+                    </div>
+                    <div id="analysisResult" class="space-y-3 mb-6"></div>
+                    <div id="adviceContainer" class="hidden mb-4">
+                        <button onclick="getNutritionalAdvice()" id="getAdviceButton" class="btn-press w-full py-3 px-4 rounded-xl text-sm font-bold text-purple-600 bg-purple-50 hover:bg-purple-100 border border-purple-100 flex items-center justify-center gap-2">取得 AI 營養建議</button>
+                        <div id="adviceResult" class="mt-3 hidden p-4 bg-gray-50 rounded-xl border border-gray-100 text-sm text-gray-600 leading-relaxed"></div>
+                    </div>
+                    <div class="mb-4 relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span class="text-gray-400 text-lg">📍</span></div>
+                        <input type="text" id="mealLocation" class="block w-full pl-10 pr-4 py-3 bg-gray-50 border-0 rounded-xl text-sm font-medium text-gray-800 placeholder-gray-400 focus:ring-2 focus:ring-blue-500" placeholder="在那裡用餐？ (選填)">
+                    </div>
+                    <button onclick="saveMeal()" id="saveButton" class="btn-press w-full py-4 rounded-2xl font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 transition disabled:opacity-50">確認儲存</button>
+                    <p id="saveMessage" class="text-xs text-center mt-3 text-gray-400 font-medium min-h-[1.25rem]"></p>
+                </section>
+                
+                <!-- 底部墊高，避免被導航列遮住 -->
+                <div class="h-8"></div>
+            </div>
+
+            <!-- VIEW: 歷史記錄 (History) -->
+            <div id="view-history" class="view-section hidden space-y-4 animate-fade-in">
+                <div class="flex justify-between items-end px-1">
+                    <h2 class="text-2xl font-bold text-gray-900">用餐記錄</h2>
+                </div>
+                <!-- 歷史列表容器 -->
+                <div id="pastMealsList" class="space-y-3 pb-8">
+                    <p id="historyLoading" class="text-center text-gray-400 py-12 text-sm">正在同步雲端資料...</p>
+                </div>
+            </div>
+
+        </main>
+        
+        <!-- 底部導航列 (Bottom Navigation) -->
+        <nav class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-lg border-t border-gray-200 px-6 py-3 pb-safe z-40 flex justify-between items-center max-w-md mx-auto">
+            <button onclick="switchTab('home')" class="nav-item active flex flex-col items-center gap-1 text-gray-400 w-16" id="nav-home">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                <span class="text-[10px] font-bold">首頁</span>
+            </button>
+
+            <!-- 中央懸浮新增按鈕 -->
+            <div class="relative -top-6">
+                <button onclick="showAddOptions()" class="btn-press w-14 h-14 bg-blue-600 rounded-full text-white shadow-lg shadow-blue-500/40 flex items-center justify-center border-4 border-gray-50">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+            </div>
+
+            <button onclick="switchTab('history')" class="nav-item flex flex-col items-center gap-1 text-gray-400 w-16" id="nav-history">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                <span class="text-[10px] font-bold">記錄</span>
+            </button>
+        </nav>
+
+        <!-- 新增選項 Action Sheet (Camera/Album) -->
+        <div id="addOptionsModal" class="fixed inset-0 z-[60] flex items-end justify-center modal-backdrop hidden" onclick="hideAddOptions(event)">
+            <div class="bg-white w-full max-w-md p-6 rounded-t-[2rem] shadow-2xl animate-slide-up space-y-4 pb-10" onclick="event.stopPropagation()">
+                <div class="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-2"></div>
+                <h3 class="text-center text-gray-500 font-bold text-sm mb-4">新增餐點</h3>
+                <button onclick="document.getElementById('cameraInput').click(); hideAddOptions()" class="btn-press w-full py-4 bg-gray-50 rounded-2xl flex items-center justify-center gap-3 hover:bg-blue-50 text-gray-800 font-bold text-lg border border-gray-100">
+                    <svg class="text-blue-500" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    拍攝照片
+                </button>
+                <button onclick="document.getElementById('fileInput').click(); hideAddOptions()" class="btn-press w-full py-4 bg-gray-50 rounded-2xl flex items-center justify-center gap-3 hover:bg-indigo-50 text-gray-800 font-bold text-lg border border-gray-100">
+                    <svg class="text-indigo-500" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    從相簿選取
+                </button>
+                <button onclick="hideAddOptions()" class="w-full py-3 text-gray-400 font-bold text-sm">取消</button>
+            </div>
+        </div>
+
+        <!-- 記錄體重彈窗 (Weight Modal) -->
+        <div id="weightModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+            <div class="bg-white w-full max-w-xs p-6 rounded-[2rem] shadow-2xl transform transition-all">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-gray-900">記錄體重</h3>
+                    <button onclick="document.getElementById('weightModal').classList.add('hidden')" class="p-2 bg-gray-100 rounded-full text-gray-500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                </div>
+                <div class="flex items-center justify-center gap-2 mb-6">
+                    <input type="number" id="newWeightInput" class="text-4xl font-black text-center w-32 border-b-2 border-gray-200 focus:border-blue-500 focus:outline-none py-2 text-gray-800" placeholder="0.0" step="0.1">
+                    <span class="text-xl font-bold text-gray-400 mt-2">kg</span>
+                </div>
+                <button onclick="saveWeightLog()" class="btn-press w-full py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-blue-200">儲存</button>
+            </div>
+        </div>
+
+        <input type="file" id="cameraInput" accept="image/*" capture="camera" class="hidden" onchange="previewImage(event)">
+        <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="previewImage(event)">
+        <div id="messageBox" class="fixed top-6 left-1/2 transform -translate-x-1/2 px-5 py-3 bg-gray-900/90 backdrop-blur-md text-white rounded-full shadow-2xl hidden transition-all duration-300 z-[80] flex items-center gap-3 text-sm font-medium border border-white/10"></div>
+    </div>
+
+    <!-- 個人資料彈窗 -->
+    <div id="profileModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+        <div class="bg-white w-full max-w-sm p-6 rounded-[2rem] shadow-2xl transform transition-all max-h-[85vh] flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="text-xl font-bold text-gray-900">個人設定</h2>
+                <button onclick="hideProfileModal()" id="closeProfileModalButton" class="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200 transition">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <div class="overflow-y-auto no-scrollbar flex-grow space-y-6 py-2">
+                <div id="profileLoginSection" class="bg-gray-900 rounded-2xl p-5 text-white shadow-lg shadow-gray-300">
+                    <p class="text-sm text-gray-300 mb-3 font-medium">登入以同步並保護您的資料</p>
+                    <button id="googleSignInButton" onclick="signInWithGoogle()" 
+                            class="btn-press w-full py-3 px-4 rounded-xl font-bold text-gray-900 bg-white hover:bg-gray-100 transition flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/><path fill="none" d="M0 0h48v48H0z"/></svg>
+                        Google 帳號登入
+                    </button>
+                    <p id="googleSignInMessage" class="text-xs text-gray-400 text-center mt-2 h-4"></p>
+                </div>
+
+                <form id="profileForm" class="space-y-4">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">身體數值設定</h3>
+                    <!-- Form Fields (Same as before) -->
+                    <div class="space-y-4">
+                        <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">暱稱</label><input type="text" id="nickname" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0 placeholder-gray-300"></div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">性別</label><select id="gender" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0"><option value="male">男性</option><option value="female">女性</option></select></div>
+                            <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">年齡</label><input type="number" id="age" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0 placeholder-gray-300"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">身高 (cm)</label><input type="number" id="height" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0 placeholder-gray-300"></div>
+                            <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">體重 (kg)</label><input type="number" id="weight" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0 placeholder-gray-300"></div>
+                        </div>
+                        <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100"><label class="block text-xs font-bold text-gray-500 mb-1 ml-1">每週活動量</label><select id="activityLevel" class="w-full bg-transparent border-0 p-0 text-gray-900 font-bold focus:ring-0 text-sm"><option value="1.2">久坐</option><option value="1.375">輕度</option><option value="1.55">中度</option><option value="1.725">高度</option><option value="1.9">極度</option></select></div>
+                    </div>
+
+                    <!-- 登出與刪除 -->
+                    <div id="accountActions" class="pt-2 mt-4 space-y-3 hidden">
+                        <button type="button" onclick="signOutUser()" class="btn-press w-full py-3 px-4 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-bold text-sm transition flex items-center justify-center gap-2">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                            登出帳號
+                        </button>
+                        <button type="button" onclick="deleteUserAccount()" class="w-full py-3 px-4 text-red-500 bg-red-50 rounded-xl hover:bg-red-100 font-bold text-sm transition">
+                            永久刪除帳號
+                        </button>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="pt-4 mt-2">
+                <button type="button" onclick="saveUserProfile()" class="btn-press w-full py-4 px-6 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 transition">儲存設定</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 資料衝突彈窗 -->
+    <div id="mergeModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+        <div class="bg-white w-full max-w-xs p-6 rounded-[2rem] shadow-2xl text-center">
+            <h3 class="text-lg font-bold text-gray-900 mb-2">資料衝突</h3>
+            <p class="text-sm text-gray-500 mb-6">此帳號已有雲端資料。您要如何處理目前的暫存記錄？</p>
+            <div class="space-y-3">
+                <button type="button" onclick="overwriteWithAnonymousData()" class="btn-press w-full py-3 bg-gray-900 text-white rounded-xl font-bold shadow-lg">保留本機 (覆蓋雲端)</button>
+                <button type="button" onclick="discardAnonymousData()" class="btn-press w-full py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-bold">使用雲端 (捨棄本機)</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 編輯餐點彈窗 -->
+    <div id="editMealModal" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop hidden">
+        <div class="bg-white w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-md sm:rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+            <div class="relative h-72 shrink-0 bg-gray-900">
+                <img id="editMealImage" src="" alt="餐點圖片" class="w-full h-full object-cover opacity-90">
+                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+                <button type="button" id="closeEditModalButton" class="absolute top-6 right-6 p-2 bg-black/20 hover:bg-black/40 backdrop-blur-md rounded-full text-white/90 border border-white/10 transition z-10"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                <div class="absolute bottom-0 left-0 p-6 w-full"><div class="flex items-center gap-2 mb-1"><span class="px-2 py-0.5 rounded-md bg-white/20 backdrop-blur-sm text-[10px] font-bold text-white uppercase tracking-wider" id="editMealDateDisplay">DATE</span></div><h2 id="editMealTitleText" class="text-3xl font-black text-white leading-none tracking-tight shadow-sm line-clamp-2">餐點詳情</h2></div>
+            </div>
+            <div class="flex-grow overflow-y-auto p-6 space-y-6 no-scrollbar bg-white">
+                <div class="flex items-center gap-3 bg-gray-50 p-1.5 pr-2 rounded-2xl border border-gray-100"><div class="p-2.5 bg-white rounded-xl shadow-sm text-blue-500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div><input type="text" id="editMealLocation" class="flex-grow bg-transparent border-0 text-sm font-bold text-gray-700 placeholder-gray-400 focus:ring-0" placeholder="未設定地點"><button onclick="updateMealLocation()" class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">儲存</button></div>
+                <div><h3 class="text-sm font-bold text-gray-800 mb-4">食物細項</h3><div id="editItemsList" class="space-y-3 pb-4"></div></div>
+            </div>
+            <div class="p-4 bg-white border-t border-gray-100 safe-bottom"><button type="button" onclick="deleteEntireMeal()" class="btn-press w-full py-3.5 text-red-500 bg-red-50 rounded-2xl hover:bg-red-100 font-bold transition">刪除此記錄</button></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCredential, signOut, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp, setLogLevel, getDoc, setDoc, orderBy, getDocs, writeBatch, deleteDoc, where, updateDoc, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Vars
+        let db, auth, userId;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = { apiKey: "AIzaSyCN7hEfzCMfN6WkCpo30MtAO_a-2FblCKo", authDomain: "foodcc-47d21.firebaseapp.com", projectId: "foodcc-47d21", storageBucket: "foodcc-47d21.firebasestorage.app", messagingSenderId: "753714580843", appId: "1:753714580843:web:7557b8179c4367389ed02e", measurementId: "G-9V9LJ5Y751" };
+        
+        let allAnalyzedItems = [], currentMealData = [], currentImageBase64 = null, currentImageMimeType = null, currentFileName = 'AI分析餐點'; 
+        let userProfile = null, dailyCalorieTarget = 2000, todaysTotalCalories = 0, myChart = null, weightChart = null;
+        let anonymousUserIdBeforeSignIn = null, googleCredentialForMerge = null, mealSubscription = null, weightSubscription = null, isHandlingConflict = false, currentEditingMealId = null;
+        
+        // Chart Range Vars
+        let currentChartRange = '7d';
+        let rawMealData = [], rawWeightData = [];
+
+        setLogLevel('Debug');
+
+        // --- View & Navigation Logic ---
+        window.switchTab = (tab) => {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(`view-${tab}`).classList.remove('hidden');
+            document.getElementById(`nav-${tab}`).classList.add('active');
+            window.scrollTo(0,0);
+        }
+        
+        window.showAddOptions = () => document.getElementById('addOptionsModal').classList.remove('hidden');
+        window.hideAddOptions = (e) => { if(!e || e.target.id === 'addOptionsModal') document.getElementById('addOptionsModal').classList.add('hidden'); }
+        window.openWeightModal = () => document.getElementById('weightModal').classList.remove('hidden');
+
+        // --- Helper Functions ---
+        function showMessage(msg, isError = true) {
+            const box = document.getElementById('messageBox');
+            box.textContent = msg;
+            box.className = `fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 z-[80] font-bold flex items-center gap-2 text-sm backdrop-blur-md ${isError ? 'bg-red-500/90 text-white' : 'bg-gray-800/90 text-white'}`;
+            box.classList.remove('hidden');
+            setTimeout(() => { box.classList.add('hidden'); }, 3000); 
+        }
+
+        function getFriendlyErrorMessage(error) {
+            if ((error.message && error.message.includes('requests-from-referer') && error.message.includes('blocked')) || error.code === 'auth/unauthorized-domain') return `網域未授權。請至 Firebase Console 新增 Authorized Domain。`;
+            if (error.message && error.message.includes('The requested action is invalid')) return 'API Key 設定受限。請檢查 Google Cloud Console。';
+            if (error.message && (error.message.includes('identitytoolkit') || error.message.includes('project-config') || error.message.includes('getProjectConfig'))) return 'API Key 限制過嚴。請至 Google Cloud Console 將 firebaseapp.com 加入白名單。';
+            return error.message;
+        }
+
+        let colorHue = 210;
+        function getRandomColor() { colorHue = (colorHue + 137) % 360; return `hsla(${colorHue}, 85%, 65%, 0.8)`; }
+
+        // --- Chart Logic ---
+        window.setChartRange = (range) => {
+            currentChartRange = range;
+            document.querySelectorAll('.range-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`btn-${range}`).classList.add('active');
+            renderCharts();
+        }
+
+        function renderCharts() {
+            // Process Meal Data
+            const calCtx = document.getElementById('calorieChart').getContext('2d');
+            const weightCtx = document.getElementById('weightChart').getContext('2d');
+            
+            // Define limits
+            const now = new Date();
+            let startDate = new Date();
+            let labels = [];
+            let calData = [];
+            let weightData = [];
+            
+            if (currentChartRange === '7d') {
+                startDate.setDate(now.getDate() - 6);
+                document.getElementById('calChartLabel').textContent = '每日總和';
+            } else if (currentChartRange === '30d') {
+                startDate.setDate(now.getDate() - 29);
+                document.getElementById('calChartLabel').textContent = '每日總和';
+            } else if (currentChartRange === '1y') {
+                startDate.setMonth(now.getMonth() - 11);
+                startDate.setDate(1); // Start of that month
+                document.getElementById('calChartLabel').textContent = '每月平均';
+            }
+            startDate.setHours(0,0,0,0);
+
+            if (currentChartRange === '7d' || currentChartRange === '30d') {
+                // DAILY VIEW
+                const days = (currentChartRange === '7d' ? 7 : 30);
+                const mapCals = new Map();
+                const mapWeight = new Map();
+
+                // Pre-fill
+                for (let i = 0; i < days; i++) {
+                    const d = new Date(startDate);
+                    d.setDate(startDate.getDate() + i);
+                    const k = d.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+                    labels.push(k);
+                    mapCals.set(k, 0);
+                    // Weight map handled differently: needs to find last record
+                }
+
+                // Process Meals
+                todaysTotalCalories = 0;
+                const todayStr = new Date().toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+                rawMealData.forEach(m => {
+                    if (m.CreatedAt) {
+                        const d = m.CreatedAt.toDate();
+                        if (d >= startDate) {
+                            const k = d.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+                            if (mapCals.has(k)) mapCals.set(k, mapCals.get(k) + (m.TotalCalories || 0));
+                            if (k === todayStr) todaysTotalCalories += (m.TotalCalories || 0);
+                        }
+                    }
+                });
+                updateDashboardUI();
+
+                // Process Weight (Fill Forward)
+                let lastKnownWeight = userProfile?.weight || 0;
+                // Sort raw weight first
+                rawWeightData.sort((a,b) => a.date - b.date);
+                
+                // Find weight just before start date to set initial lastKnown
+                const weightsBefore = rawWeightData.filter(w => w.date.toDate() < startDate);
+                if (weightsBefore.length > 0) lastKnownWeight = weightsBefore[weightsBefore.length-1].weight;
+
+                for (let i = 0; i < days; i++) {
+                    const dStart = new Date(startDate); dStart.setDate(startDate.getDate() + i); dStart.setHours(0,0,0,0);
+                    const dEnd = new Date(dStart); dEnd.setHours(23,59,59,999);
+                    
+                    // Find last weight in this day
+                    const weightsToday = rawWeightData.filter(w => w.date.toDate() >= dStart && w.date.toDate() <= dEnd);
+                    if (weightsToday.length > 0) {
+                        lastKnownWeight = weightsToday[weightsToday.length-1].weight;
+                    }
+                    weightData.push(lastKnownWeight);
+                }
+                
+                calData = Array.from(mapCals.values());
+
+            } else {
+                // MONTHLY VIEW (1 Year)
+                // Generate 12 months labels
+                for (let i = 0; i < 12; i++) {
+                    const d = new Date(startDate);
+                    d.setMonth(startDate.getMonth() + i);
+                    const k = d.toLocaleDateString('zh-TW', { year: '2-digit', month: 'short' }); // e.g. 24年1月
+                    labels.push(k);
+                }
+
+                // Calculate Monthly Avg Calories
+                // We need map of { "Key": { total: 0, daysWithRecords: Set() } } -- Actually prompt says "interval average", usually means sum/days_in_month. Let's do Sum / Days in Month.
+                const mapCals = new Array(12).fill(0);
+                rawMealData.forEach(m => {
+                    if (m.CreatedAt) {
+                        const d = m.CreatedAt.toDate();
+                        if (d >= startDate) {
+                            // Find index (month diff)
+                            const diffMonths = (d.getFullYear() - startDate.getFullYear()) * 12 + (d.getMonth() - startDate.getMonth());
+                            if (diffMonths >= 0 && diffMonths < 12) {
+                                mapCals[diffMonths] += (m.TotalCalories || 0);
+                            }
+                        }
+                    }
+                });
+                // Normalize by days in month
+                calData = mapCals.map((total, idx) => {
+                   const d = new Date(startDate); d.setMonth(startDate.getMonth() + idx + 1); d.setDate(0); // Last day of month
+                   const daysInMonth = d.getDate();
+                   return total / daysInMonth; // Daily Avg
+                });
+                
+                // Calculate Monthly Last Weight
+                let lastKnownWeight = userProfile?.weight || 0;
+                 // Sort raw weight first
+                rawWeightData.sort((a,b) => a.date - b.date);
+                const weightsBefore = rawWeightData.filter(w => w.date.toDate() < startDate);
+                if (weightsBefore.length > 0) lastKnownWeight = weightsBefore[weightsBefore.length-1].weight;
+                
+                for(let i=0; i<12; i++) {
+                     const dStart = new Date(startDate); dStart.setMonth(startDate.getMonth() + i); dStart.setDate(1); dStart.setHours(0,0,0,0);
+                     const dEnd = new Date(dStart); dEnd.setMonth(dEnd.getMonth() + 1); dEnd.setDate(0); dEnd.setHours(23,59,59,999);
+                     
+                     const weightsInMonth = rawWeightData.filter(w => w.date.toDate() >= dStart && w.date.toDate() <= dEnd);
+                     if(weightsInMonth.length > 0) {
+                         lastKnownWeight = weightsInMonth[weightsInMonth.length-1].weight;
+                     }
+                     weightData.push(lastKnownWeight);
+                }
+                
+                // For today's total display, we still need today's sum regardless of chart view
+                todaysTotalCalories = 0;
+                const todayStr = new Date().toDateString();
+                rawMealData.forEach(m => {
+                   if(m.CreatedAt && m.CreatedAt.toDate().toDateString() === todayStr) todaysTotalCalories += (m.TotalCalories||0);
+                });
+                updateDashboardUI();
+            }
+
+            // Draw Charts
+            if (myChart) {
+                myChart.data.labels = labels;
+                myChart.data.datasets = [
+                    { 
+                        label: currentChartRange === '1y' ? '日均攝取' : '攝取', 
+                        data: calData, 
+                        backgroundColor: getRandomColor(), 
+                        borderRadius: 4 
+                    },
+                    { 
+                        label: '目標', 
+                        data: labels.map(() => dailyCalorieTarget), 
+                        type: 'line', 
+                        borderColor: '#E5E7EB', 
+                        borderDash: [5, 5], 
+                        borderWidth: 2, 
+                        pointRadius: 0, 
+                        fill: false 
+                    }
+                ];
+                myChart.update();
+            } else {
+                 myChart = new Chart(calCtx, { 
+                    type: 'bar', 
+                    data: { 
+                        labels, 
+                        datasets: [
+                            { label: '攝取', data: calData, backgroundColor: getRandomColor(), borderRadius: 4 },
+                            { label: '目標', data: labels.map(() => dailyCalorieTarget), type: 'line', borderColor: '#E5E7EB', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, fill: false }
+                        ] 
+                    }, 
+                    options: { 
+                        responsive: true, maintainAspectRatio: false, 
+                        plugins: { legend: { display: false } }, 
+                        scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { borderDash: [2, 4], color: '#f3f4f6' } } } 
                     } 
-                 }
-                 
-                 if (curr) {
-                    userId = curr.uid; 
-                    updateAuthUI(curr); 
-                    loadUserProfile(curr); 
-                    mealSubscription = subscribeToMealsAndData(userId);
-                    weightSubscription = subscribeToWeight(userId);
-                 }
+                });
+            }
+
+            if (weightChart) {
+                weightChart.data.labels = labels;
+                weightChart.data.datasets[0].data = weightData;
+                weightChart.update();
+            } else {
+                 weightChart = new Chart(weightCtx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{ label: '體重', data: weightData, borderColor: '#2563EB', backgroundColor: 'rgba(37, 99, 235, 0.1)', tension: 0.3, fill: true, pointRadius: currentChartRange==='1y'?3:2 }]
+                    },
+                    options: { 
+                        responsive: true, maintainAspectRatio: false, 
+                        plugins: { legend: { display: false } },
+                        scales: { x: { grid: {display:false} }, y: { grid: {borderDash:[4,4]}, beginAtZero: false } }
+                    }
+                });
+            }
+        }
+
+        // --- Weight Logic ---
+        window.saveWeightLog = async () => {
+             const w = parseFloat(document.getElementById('newWeightInput').value);
+             if(!w || w <= 0) return showMessage('請輸入有效體重');
+             try {
+                 await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/WeightLogs`), { weight: w, date: serverTimestamp() });
+                 await setDoc(doc(db, `/artifacts/${appId}/users/${userId}/Profile`, 'data'), { weight: w }, { merge: true });
+                 document.getElementById('weight').value = w; // update profile form
+                 document.getElementById('weightModal').classList.add('hidden');
+                 showMessage('體重已記錄', false);
+             } catch(e) { showMessage('記錄失敗', true); }
+        }
+
+        function subscribeToWeight(uid) {
+            if(!db || !uid) return;
+            const q = query(collection(db, `/artifacts/${appId}/users/${uid}/WeightLogs`), orderBy("date", "asc"), limit(1000)); // Increased limit for year view
+            return onSnapshot(q, (snap) => {
+                const logs = snap.docs.map(d => d.data());
+                rawWeightData = logs;
+                if(logs.length > 0) {
+                    const latest = logs[logs.length-1].weight;
+                    document.getElementById('currentWeightDisplay').textContent = latest;
+                } else {
+                    document.getElementById('currentWeightDisplay').textContent = userProfile?.weight || '--';
+                }
+                renderCharts(); // Re-render
             });
         }
+
+        // --- Image & Analysis ---
+        function resizeImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader(); reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image(); img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas'); const MAX = 1024; const scale = MAX/img.width;
+                        canvas.width = (img.width>MAX)?MAX:img.width; canvas.height = (img.width>MAX)?img.height*scale:img.height;
+                        const ctx = canvas.getContext('2d'); ctx.drawImage(img,0,0,canvas.width,canvas.height);
+                        const b64 = canvas.toDataURL('image/jpeg', 0.8); resolve({ base64: b64.split(',')[1], mimeType: 'image/jpeg', displayUrl: b64 });
+                    }; img.onerror=reject;
+                }; reader.onerror=reject;
+            });
+        }
+
+        async function callGeminiAPI(base64Image, mimeType) {
+            const apiKey = "AIzaSyCN7hEfzCMfN6WkCpo30MtAO_a-2FblCKo"; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ role: "user", parts: [{ text: "請詳細分析這張圖片中的所有食物。所有食物名稱嚴格使用繁體中文。只回傳 JSON 格式的結果。" }, { inlineData: { mimeType: mimeType, data: base64Image } }] }],
+                systemInstruction: { parts: [{ text: "你是一位精準的營養學家。根據圖片，識別所有食物。重點：所有食物名稱必須翻譯成繁體中文。對於每個食物，估算其名稱和總熱量（kcal）以及估計份量（以公克 'g' 為單位）。" }] },
+                generationConfig: { responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { foodItems: { type: "ARRAY", items: { type: "OBJECT", properties: { name: { type: "STRING" }, estimated_calories: { type: "NUMBER" }, estimated_quantity_g: { type: "NUMBER" } }, required: ["name", "estimated_calories", "estimated_quantity_g"] } } }, required: ["foodItems"] } }
+            };
+            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) throw new Error((await response.json()).error.message);
+            return JSON.parse((await response.json()).candidates?.[0]?.content?.parts?.[0]?.text).foodItems;
+        }
+        
+        async function callGeminiTextAPI(mealData) {
+            const apiKey = "AIzaSyCN7hEfzCMfN6WkCpo30MtAO_a-2FblCKo"; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ role: "user", parts: [{ text: `食物清單：${JSON.stringify(mealData)}。請用繁體中文給出一段簡短的營養總結和改進建議。` }] }],
+                systemInstruction: { parts: [{ text: "你是一位友善且鼓勵人心的營養師。回覆要簡潔、正面。" }] },
+                generationConfig: { responseMimeType: "text/plain" }
+            };
+            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            return (await response.json()).candidates?.[0]?.content?.parts?.[0]?.text.trim();
+        }
+
+        window.previewImage = async function(event) { 
+            const input = event.target;
+            if (input.files && input.files[0]) {
+                try {
+                    const compressedData = await resizeImage(input.files[0]);
+                    document.getElementById('imagePreview').src = compressedData.displayUrl; 
+                    document.getElementById('imagePreviewContainer').classList.remove('hidden');
+                    document.getElementById('analyzeButton').disabled = false;
+                    currentImageBase64 = compressedData.base64; currentImageMimeType = compressedData.mimeType;
+                    currentFileName = input.files[0].name.split('.')[0] || 'AI分析餐點';
+                    switchTab('home');
+                    setTimeout(() => document.getElementById('imagePreviewContainer').scrollIntoView({behavior:'smooth'}), 300);
+                } catch (error) { showMessage("圖片處理失敗", true); }
+            }
+        }
+        
+        window.analyzeFood = async function() {
+            const btn = document.getElementById('analyzeButton'); const resultDiv = document.getElementById('analysisResult');
+            btn.disabled = true; document.getElementById('loadingIndicator').classList.remove('hidden'); document.getElementById('resultsSection').classList.remove('hidden'); resultDiv.innerHTML = '';
+            try {
+                const items = await callGeminiAPI(currentImageBase64, currentImageMimeType);
+                allAnalyzedItems = items.sort((a, b) => (b.estimated_calories || 0) - (a.estimated_calories || 0));
+                resultDiv.innerHTML = allAnalyzedItems.map((item, index) => `
+                    <div class="p-3 border border-gray-100 rounded-2xl flex items-center bg-gray-50 space-x-3 transition hover:border-blue-200">
+                        <input type="checkbox" id="item-${index}" class="form-checkbox h-5 w-5 rounded-md text-blue-600 border-gray-300 focus:ring-blue-500 custom-checkbox transition" data-index="${index}" onchange="updateSelectedMealData()" checked>
+                        <label for="item-${index}" class="flex-grow cursor-pointer flex justify-between items-center"><span class="font-bold text-gray-700 text-sm">${item.name} <span class="text-xs text-gray-400 font-normal">(${item.estimated_quantity_g}g)</span></span><span class="text-sm font-bold text-gray-900">${item.estimated_calories.toFixed(0)} kcal</span></label>
+                    </div>`).join('');
+                updateSelectedMealData(); document.getElementById('totalCaloriesDisplay').classList.remove('hidden'); document.getElementById('saveButton').disabled = false; document.getElementById('adviceContainer').classList.remove('hidden'); showMessage('分析完成！', false);
+            } catch (error) { resultDiv.innerHTML = `<p class="text-red-500 text-sm p-4 bg-red-50 rounded-xl">分析失敗: ${getFriendlyErrorMessage(error)}</p>`; }
+            finally { btn.disabled = false; document.getElementById('loadingIndicator').classList.add('hidden'); }
+        }
+
+        window.updateSelectedMealData = function() {
+            currentMealData = []; let total = 0;
+            allAnalyzedItems.forEach((item, index) => { if (document.getElementById(`item-${index}`)?.checked) { currentMealData.push(item); total += item.estimated_calories || 0; } });
+            document.getElementById('totalCaloriesValue').textContent = total.toFixed(0);
+            document.getElementById('saveButton').disabled = currentMealData.length === 0; document.getElementById('getAdviceButton').disabled = currentMealData.length === 0;
+        }
+
+        window.getNutritionalAdvice = async function() {
+             const btn = document.getElementById('getAdviceButton'); const div = document.getElementById('adviceResult');
+             btn.disabled = true; div.classList.remove('hidden'); div.innerHTML = '<span class="animate-pulse">AI 思考中...</span>';
+             try { div.innerHTML = (await callGeminiTextAPI(currentMealData)).replace(/\n/g, '<br>'); } catch (error) { div.textContent = "無法取得建議"; } finally { btn.disabled = false; }
+        }
+
+        window.showProfileModal = (allowClose = true) => { document.getElementById('profileModal').classList.remove('hidden'); document.getElementById('closeProfileModalButton').style.display = allowClose ? 'block' : 'none'; }
+        window.hideProfileModal = () => document.getElementById('profileModal').classList.add('hidden');
+        
+        function calculateTDEE(p) {
+            if (!p.age || !p.height || !p.weight) return 2000;
+            let bmr = (p.gender === 'male' ? (10*p.weight + 6.25*p.height - 5*p.age + 5) : (10*p.weight + 6.25*p.height - 5*p.age - 161));
+            return Math.round(bmr * parseFloat(p.activityLevel));
+        }
+        
+        function updateDashboardUI() {
+            const remaining = dailyCalorieTarget - todaysTotalCalories;
+            const el = document.getElementById('remainingCalories');
+            el.textContent = remaining.toFixed(0);
+            document.getElementById('todayTotal').textContent = todaysTotalCalories.toFixed(0);
+            document.getElementById('calorieTarget').textContent = dailyCalorieTarget.toFixed(0);
+            el.className = `text-5xl font-black tracking-tighter tabular-nums ${remaining < 0 ? 'text-red-200' : 'text-white'}`;
+        }
+        
+        // Old updateChart function is replaced by renderCharts
+        
+        window.saveMeal = async function() {
+            if (!currentMealData.length) return showMessage('請勾選食物');
+            const btn = document.getElementById('saveButton'); btn.disabled = true;
+            try {
+                const total = currentMealData.reduce((s, i) => s + (i.estimated_calories||0), 0);
+                const name = currentMealData.length > 0 ? (currentMealData[0].name + (currentMealData.length > 1 ? ` 等 ${currentMealData.length} 項` : '')) : currentFileName;
+                const loc = document.getElementById('mealLocation').value || '';
+                
+                let uid = userId;
+                if(!uid) { const anon = await signInAnonymously(auth); uid = anon.user.uid; }
+
+                const mealRef = await addDoc(collection(db, `/artifacts/${appId}/users/${uid}/Meals`), { Name: name, Location: loc, PhotoBase64: currentImageBase64, PhotoMimeType: currentImageMimeType, TotalCalories: total, CreatedAt: serverTimestamp(), UserId: uid });
+                const batch = writeBatch(db);
+                currentMealData.forEach(item => { batch.set(doc(collection(db, `/artifacts/${appId}/users/${uid}/FoodItems`)), { Name: item.name, CaloriesPerServing: item.estimated_calories, Quantity: item.estimated_quantity_g, CaloriesPerGram: (item.estimated_quantity_g ? item.estimated_calories/item.estimated_quantity_g : 0), MealId: mealRef.id, UserId: uid }); });
+                await batch.commit();
+
+                showMessage('儲存成功！', false);
+                document.getElementById('imagePreviewContainer').classList.add('hidden');
+                document.getElementById('resultsSection').classList.add('hidden');
+                document.getElementById('cameraInput').value = ''; document.getElementById('fileInput').value = '';
+                document.getElementById('adviceContainer').classList.add('hidden'); document.getElementById('mealLocation').value = '';
+            } catch (e) { console.error(e); showMessage(`儲存失敗`, true); btn.disabled = false; }
+        }
+
+        async function loadUserProfile(user) {
+            if (!db || !user) return;
+            const snap = await getDoc(doc(db, `/artifacts/${appId}/users/${user.uid}/Profile`, 'data'));
+            if (snap.exists()) {
+                userProfile = snap.data();
+                ['nickname','gender','age','height','weight','activityLevel'].forEach(k => document.getElementById(k).value = userProfile[k] || (k==='gender'?'male':''));
+                dailyCalorieTarget = calculateTDEE(userProfile);
+            } else {
+                document.getElementById('nickname').value = user.displayName || '';
+                if (user.isAnonymous) showProfileModal(true);
+            }
+            updateDashboardUI();
+        }
+
+        window.saveUserProfile = async function() {
+            const data = { nickname: document.getElementById('nickname').value, gender: document.getElementById('gender').value, age: document.getElementById('age').value, height: document.getElementById('height').value, weight: document.getElementById('weight').value, activityLevel: document.getElementById('activityLevel').value };
+            if (!data.age || !data.height || !data.weight) return showMessage("請填寫完整數值", true);
+            await setDoc(doc(db, `/artifacts/${appId}/users/${userId}/Profile`, 'data'), data, { merge: true });
+            if (auth.currentUser && !auth.currentUser.isAnonymous && data.nickname !== auth.currentUser.displayName) await updateProfile(auth.currentUser, { displayName: data.nickname });
+            userProfile = data; dailyCalorieTarget = calculateTDEE(data); updateDashboardUI(); updateAuthUI(auth.currentUser);
+            // Re-render charts as target might have changed
+            renderCharts();
+            hideProfileModal(); showMessage("設定已更新", false);
+            document.getElementById('currentWeightDisplay').textContent = data.weight;
+        }
+
+        function subscribeToMealsAndData(uid) {
+            if (!db || !uid) return;
+            const q = query(collection(db, `/artifacts/${appId}/users/${uid}/Meals`), orderBy("CreatedAt", "desc"), limit(1000)); // Increased limit
+            const list = document.getElementById('pastMealsList');
+            return onSnapshot(q, (snapshot) => {
+                const meals = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                rawMealData = meals; // Store for global chart use
+                
+                if (snapshot.empty) { 
+                    list.innerHTML = `<div class="flex flex-col items-center justify-center py-12 text-gray-300"><svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg><p class="text-sm font-medium">還沒有記錄，按下面的按鈕開始吧！</p></div>`; 
+                } else {
+                     let html = '', lastDateStr = '';
+                    const todayStr = new Date().toLocaleDateString('zh-TW'), yesterStr = new Date(new Date().setDate(new Date().getDate()-1)).toLocaleDateString('zh-TW');
+                    // Display only recent 50 for list performance, though we fetched 1000 for chart
+                    meals.slice(0, 50).forEach(meal => {
+                        const d = meal.CreatedAt ? meal.CreatedAt.toDate() : new Date(); const dStr = d.toLocaleDateString('zh-TW');
+                        const displayDate = (dStr === todayStr) ? '今天' : (dStr === yesterStr ? '昨天' : dStr);
+                        if (dStr !== lastDateStr) { html += `<div class="flex items-center gap-2 mt-6 mb-2"><div class="h-px bg-gray-200 flex-grow"></div><span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50 px-2 py-0.5 rounded-full">${displayDate}</span><div class="h-px bg-gray-200 flex-grow"></div></div>`; lastDateStr = dStr; }
+                        const imgSrc = (meal.PhotoBase64 && meal.PhotoMimeType) ? `data:${meal.PhotoMimeType};base64,${meal.PhotoBase64}` : 'https://placehold.co/100x100/e2e8f0/94a3b8?text=Img';
+                        html += `<button onclick="openEditModal('${meal.id}', '${imgSrc}', '${meal.Name}', '${dStr}')" class="btn-press w-full p-3 bg-white border border-gray-100/50 rounded-2xl flex items-center gap-4 shadow-sm hover:shadow-md hover:border-blue-100 transition-all group"><div class="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 shrink-0"><img src="${imgSrc}" class="w-full h-full object-cover group-hover:scale-110 transition duration-500" /></div><div class="flex-grow text-left min-w-0"><h4 class="font-bold text-gray-800 text-sm truncate group-hover:text-blue-600 transition">${meal.Name || '未命名'}</h4><div class="flex items-center gap-1 mt-1 text-xs text-gray-400">${meal.Location ? `<span class="flex items-center gap-0.5 truncate max-w-[100px]"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>${meal.Location}</span><span class="text-gray-300">•</span>` : ''}<span>${d.toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit'})}</span></div></div><div class="text-right"><span class="block font-extrabold text-gray-900 text-lg leading-none">${meal.TotalCalories?.toFixed(0) || 0}</span><span class="text-[10px] text-gray-400 font-bold uppercase">kcal</span></div></button>`;
+                    });
+                    list.innerHTML = html; 
+                }
+                renderCharts(); // Render all charts
+            });
+        }
+
+        // --- Edit Modal Logic ---
+        window.openEditModal = async function(id, src, name, date) {
+            currentEditingMealId = id; document.getElementById('editMealImage').src = src; document.getElementById('editMealTitleText').textContent = name; document.getElementById('editMealDateDisplay').textContent = date;
+            document.getElementById('editItemsList').innerHTML = '<p class="text-center text-gray-400 py-8 text-sm animate-pulse">讀取詳細資料...</p>'; document.getElementById('editMealModal').classList.remove('hidden');
+            try { const snap = await getDoc(doc(db, `/artifacts/${appId}/users/${userId}/Meals`, id)); document.getElementById('editMealLocation').value = snap.exists() ? (snap.data().Location || '') : ''; } catch(e) {}
+            const items = (await getDocs(query(collection(db, `/artifacts/${appId}/users/${userId}/FoodItems`), where("MealId", "==", id)))).docs.map(d => ({id:d.id, ...d.data()})).sort((a,b)=>(b.CaloriesPerServing||0)-(a.CaloriesPerServing||0));
+            document.getElementById('editItemsList').innerHTML = items.map(i => `
+                <div class="bg-gray-50 rounded-2xl p-4 border border-gray-100" id="edit-item-${i.id}">
+                    <div class="flex justify-between items-start mb-3"><p class="font-bold text-gray-800">${i.Name}</p><span class="font-black text-gray-900">${i.CaloriesPerServing?.toFixed(0)} <span class="text-xs font-normal text-gray-500">kcal</span></span></div>
+                    <div class="grid grid-cols-2 gap-3 mb-3"><div class="bg-white p-2 rounded-xl border border-gray-100 flex flex-col"><span class="text-[10px] text-gray-400 uppercase font-bold pl-1">份量 (g)</span><input type="number" id="qty-${i.id}" value="${i.Quantity||0}" class="w-full font-bold text-gray-800 bg-transparent border-0 p-1 focus:ring-0" data-cal-per-gram="${i.CaloriesPerGram||0}" oninput="recalculateItemCalories('${i.id}')"></div><div class="bg-white p-2 rounded-xl border border-gray-100 flex flex-col"><span class="text-[10px] text-gray-400 uppercase font-bold pl-1">熱量 (kcal)</span><input type="number" id="cals-${i.id}" value="${i.CaloriesPerServing?.toFixed(0)}" class="w-full font-bold text-gray-800 bg-transparent border-0 p-1 focus:ring-0"></div></div>
+                    <div class="flex justify-end gap-2"><button onclick="deleteMealItem('${i.id}')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-red-500 bg-red-50 hover:bg-red-100 transition">刪除</button><button onclick="updateMealItem('${i.id}')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition">更新</button></div>
+                </div>`).join('') || '<p class="text-center text-gray-400 text-sm">無細項資料</p>';
+        }
+
+        document.getElementById('closeEditModalButton').onclick = () => document.getElementById('editMealModal').classList.add('hidden');
+        document.getElementById('closeProfileModalButton').onclick = hideProfileModal;
+        window.recalculateItemCalories = (id) => { const qty = parseFloat(document.getElementById(`qty-${id}`).value); const rate = parseFloat(document.getElementById(`qty-${id}`).dataset.calPerGram); if (!isNaN(qty) && !isNaN(rate)) document.getElementById(`cals-${id}`).value = (qty * rate).toFixed(0); }
+        window.updateMealItem = async (id) => { const qty = parseFloat(document.getElementById(`qty-${id}`).value); const cals = parseFloat(document.getElementById(`cals-${id}`).value); await updateDoc(doc(db, `/artifacts/${appId}/users/${userId}/FoodItems`, id), { Quantity: qty, CaloriesPerServing: cals, CaloriesPerGram: (qty>0?cals/qty:0) }); recalculateTotalCalories(currentEditingMealId); showMessage('已更新', false); }
+        window.updateMealLocation = async () => { await updateDoc(doc(db, `/artifacts/${appId}/users/${userId}/Meals`, currentEditingMealId), { Location: document.getElementById('editMealLocation').value }); showMessage('地點已更新', false); }
+        window.deleteMealItem = async (id) => { await deleteDoc(doc(db, `/artifacts/${appId}/users/${userId}/FoodItems`, id)); document.getElementById(`edit-item-${id}`).remove(); recalculateTotalCalories(currentEditingMealId); showMessage('已刪除', false); }
+        async function recalculateTotalCalories(mid) { const total = (await getDocs(query(collection(db, `/artifacts/${appId}/users/${userId}/FoodItems`), where("MealId", "==", mid)))).docs.reduce((s, d) => s + (d.data().CaloriesPerServing||0), 0); await updateDoc(doc(db, `/artifacts/${appId}/users/${userId}/Meals`, mid), { TotalCalories: total }); }
+        window.deleteEntireMeal = async () => { const batch = writeBatch(db); batch.delete(doc(db, `/artifacts/${appId}/users/${userId}/Meals`, currentEditingMealId)); (await getDocs(query(collection(db, `/artifacts/${appId}/users/${userId}/FoodItems`), where("MealId", "==", currentEditingMealId)))).forEach(d => batch.delete(d.ref)); await batch.commit(); document.getElementById('editMealModal').classList.add('hidden'); showMessage('記錄已刪除', false); }
+
+        window.signInWithGoogle = async () => {
+            if (auth.currentUser?.isAnonymous) anonymousUserIdBeforeSignIn = auth.currentUser.uid;
+            
+            // Check if mobile device
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                // Use redirect for mobile PWA to avoid popup blocking
+                try {
+                    await signInWithRedirect(auth, new GoogleAuthProvider());
+                    // Code will stop here as page redirects
+                } catch (e) {
+                    showMessage(`Redirect 錯誤: ${getFriendlyErrorMessage(e)}`, true);
+                }
+            } else {
+                // Use popup for desktop
+                try { 
+                    await signInWithPopup(auth, new GoogleAuthProvider()); 
+                    showMessage('登入成功', false); 
+                } catch (e) { 
+                    if (e.code === 'auth/credential-already-in-use') { 
+                        googleCredentialForMerge = GoogleAuthProvider.credentialFromError(e); 
+                        document.getElementById('mergeModal').classList.remove('hidden'); 
+                    } else {
+                        showMessage(`登入失敗: ${getFriendlyErrorMessage(e)}`, true); 
+                    }
+                }
+            }
+        }
+
+        // Handle Redirect Result on Page Load
+        async function handleRedirectResult() {
+            try {
+                const result = await getRedirectResult(auth);
+                if (result) {
+                    showMessage('Google 登入成功！', false);
+                    // Handle potential merge conflict logic here if needed, 
+                    // though getRedirectResult usually handles sign-in directly.
+                    // If complex merge logic is needed after redirect, we might need to store pre-redirect state in localStorage.
+                }
+            } catch (error) {
+                if (error.code === 'auth/credential-already-in-use') {
+                     googleCredentialForMerge = GoogleAuthProvider.credentialFromError(error);
+                     document.getElementById('mergeModal').classList.remove('hidden');
+                } else {
+                    console.error("Redirect Login Error:", error);
+                    // Don't show message for null result (normal load), only errors
+                }
+            }
+        }
+
+        window.overwriteWithAnonymousData = async () => { document.getElementById('mergeModal').classList.add('hidden'); showMessage('覆蓋資料中...', false); try { const cred = await signInWithCredential(auth, googleCredentialForMerge); await deleteAllUserData(cred.user.uid); await copyUserData(anonymousUserIdBeforeSignIn, cred.user.uid); window.location.reload(); } catch(e) { showMessage('失敗', true); } }
+        window.discardAnonymousData = async () => { document.getElementById('mergeModal').classList.add('hidden'); await signInWithCredential(auth, googleCredentialForMerge); window.location.reload(); }
+        window.signOutUser = async () => { try { await signOut(auth); showMessage("已登出", false); window.location.reload(); } catch(e) { showMessage("登出失敗", true); } }
+        window.deleteUserAccount = async () => { if (!confirm("確定刪除帳號？無法復原！")) return; try { await deleteAllUserData(userId); await deleteUser(auth.currentUser); alert('帳號已刪除'); window.location.reload(); } catch(e) { showMessage('刪除失敗', true); } }
+
+        function updateAuthUI(user) {
+            const authSec = document.getElementById('authSection');
+            if (user && !user.isAnonymous) {
+                document.getElementById('userDisplayName').textContent = user.displayName || 'User'; document.getElementById('userDisplayName').classList.remove('hidden'); authSec.classList.remove('hidden');
+                document.getElementById('profileLoginSection').classList.add('hidden'); document.getElementById('accountActions').classList.remove('hidden');
+            } else {
+                authSec.classList.add('hidden'); document.getElementById('profileLoginSection').classList.remove('hidden'); document.getElementById('accountActions').classList.add('hidden');
+            }
+        }
+
+        window.onload = initFirebase;
+        async function initFirebase() {
+            const app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app);
+            
+            // Check for redirect result first
+            await handleRedirectResult();
+
+            onAuthStateChanged(auth, async (u) => {
+                 if (isHandlingConflict) return;
+                 if (mealSubscription) mealSubscription();
+                 if (weightSubscription) weightSubscription();
+                 let curr = u;
+                 if (!curr) { try { curr = (await signInAnonymously(auth)).user; } catch(e){ console.error("Anon Auth Failed", e); showMessage(`匿名登入失敗: ${getFriendlyErrorMessage(e)}`, true); } }
+                 if (!curr) return; 
+                 userId = curr.uid; updateAuthUI(curr); loadUserProfile(curr); 
+                 mealSubscription = subscribeToMealsAndData(userId);
+                 weightSubscription = subscribeToWeight(userId);
+            });
+        }
+    </script>
+
+    <script>
+      if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
+    </script>
+</body>
+</html>
