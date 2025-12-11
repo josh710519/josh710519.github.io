@@ -77,6 +77,17 @@
             visibility: hidden;
         }
     </style>
+    
+    <!-- 設定環境變數 (請在此處填入您的新金鑰) -->
+    <script>
+        window.process = {
+            env: {
+                // 請在此填入新的 API Key，並在 Google Cloud Console 設定 HTTP Referrer 限制
+                // 限制網域為: josh710519.github.io 和 localhost
+                API_KEY: "AIzaSyCPU0XF8xpFJRqxngJ923aJOs-ME7wRW9I"
+            }
+        };
+    </script>
 </head>
 <body class="bg-white min-h-screen text-gray-800"> 
 
@@ -451,7 +462,7 @@
         // Global Vars
         let db, auth, userId;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = { apiKey: "AIzaSyDY7w-0oOXrExmPMWAlwhoFbjibAz1PXNE", authDomain: "foodcc-47d21.firebaseapp.com", projectId: "foodcc-47d21", storageBucket: "foodcc-47d21.firebasestorage.app", messagingSenderId: "753714580843", appId: "1:753714580843:web:7557b8179c4367389ed02e", measurementId: "G-9V9LJ5Y751" };
+        const firebaseConfig = { apiKey: process.env.API_KEY, authDomain: "foodcc-47d21.firebaseapp.com", projectId: "foodcc-47d21", storageBucket: "foodcc-47d21.firebasestorage.app", messagingSenderId: "753714580843", appId: "1:753714580843:web:7557b8179c4367389ed02e", measurementId: "G-9V9LJ5Y751" };
         
         let allAnalyzedItems = [], currentMealData = [], currentImageBase64 = null, currentImageMimeType = null, currentFileName = 'AI Meal Analysis'; 
         let userProfile = null, dailyCalorieTarget = 2000, todaysTotalCalories = 0, myChart = null, weightChart = null;
@@ -604,7 +615,7 @@
         }
 
         async function callGeminiAPI(base64Image, mimeType) {
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyDY7w-0oOXrExmPMWAlwhoFbjibAz1PXNE" });
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash-preview-09-2025',
                 contents: {
@@ -643,7 +654,7 @@
         }
         
         async function callGeminiTextAPI(mealData) {
-            const ai = new GoogleGenAI({ apiKey: "AIzaSyDY7w-0oOXrExmPMWAlwhoFbjibAz1PXNE" });
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash-preview-09-2025',
                 contents: [{ role: "user", parts: [{ text: `食物清單：${JSON.stringify(mealData)}。請用繁體中文給出一段簡短的營養總結和改進建議。` }] }],
