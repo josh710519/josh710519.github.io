@@ -446,11 +446,12 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp, setLogLevel, getDoc, setDoc, orderBy, getDocs, writeBatch, deleteDoc, where, updateDoc, limit, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { GoogleGenAI, Type } from "https://esm.sh/@google/genai";
 
         // Global Vars
         let db, auth, userId;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = { apiKey: "AIzaSyCp5EOEhA00zAQ_eyTqPW3h6db8fLuApks", authDomain: "foodcc-47d21.firebaseapp.com", projectId: "foodcc-47d21", storageBucket: "foodcc-47d21.firebasestorage.app", messagingSenderId: "753714580843", appId: "1:753714580843:web:7557b8179c4367389ed02e", measurementId: "G-9V9LJ5Y751" };
+        const firebaseConfig = { apiKey: "AIzaSyDY7w-0oOXrExmPMWAlwhoFbjibAz1PXNE", authDomain: "foodcc-47d21.firebaseapp.com", projectId: "foodcc-47d21", storageBucket: "foodcc-47d21.firebasestorage.app", messagingSenderId: "753714580843", appId: "1:753714580843:web:7557b8179c4367389ed02e", measurementId: "G-9V9LJ5Y751" };
         
         let allAnalyzedItems = [], currentMealData = [], currentImageBase64 = null, currentImageMimeType = null, currentFileName = 'AI Meal Analysis'; 
         let userProfile = null, dailyCalorieTarget = 2000, todaysTotalCalories = 0, myChart = null, weightChart = null;
@@ -603,27 +604,32 @@
         }
 
         async function callGeminiAPI(base64Image, mimeType) {
-            const apiKey = "AIzaSyCN7hEfzCMfN6WkCpo30MtAO_a-2FblCKo"; 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-            const payload = {
-                contents: [{ role: "user", parts: [{ text: "Analyze this food image. Identify all items. Provide nutritional values (Calories, Protein, Carbs, Fat) for each item. ESTIMATE weight in grams. Return JSON." }, { inlineData: { mimeType: mimeType, data: base64Image } }] }],
-                systemInstruction: { parts: [{ text: "You are a precise nutritionist. Output ONLY valid JSON." }] },
-                generationConfig: { 
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyDY7w-0oOXrExmPMWAlwhoFbjibAz1PXNE" });
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-preview-09-2025',
+                contents: {
+                    role: "user",
+                    parts: [
+                        { text: "Analyze this food image. Identify all items. Provide nutritional values (Calories, Protein, Carbs, Fat) for each item. ESTIMATE weight in grams. Return JSON." }, 
+                        { inlineData: { mimeType: mimeType, data: base64Image } }
+                    ]
+                },
+                config: { 
                     responseMimeType: "application/json", 
                     responseSchema: { 
-                        type: "OBJECT", 
+                        type: Type.OBJECT, 
                         properties: { 
                             foodItems: { 
-                                type: "ARRAY", 
+                                type: Type.ARRAY, 
                                 items: { 
-                                    type: "OBJECT", 
+                                    type: Type.OBJECT, 
                                     properties: { 
-                                        name: { type: "STRING" }, 
-                                        estimated_calories: { type: "NUMBER" }, 
-                                        estimated_quantity_g: { type: "NUMBER" },
-                                        protein_g: { type: "NUMBER" },
-                                        carbs_g: { type: "NUMBER" },
-                                        fat_g: { type: "NUMBER" }
+                                        name: { type: Type.STRING }, 
+                                        estimated_calories: { type: Type.NUMBER }, 
+                                        estimated_quantity_g: { type: Type.NUMBER },
+                                        protein_g: { type: Type.NUMBER },
+                                        carbs_g: { type: Type.NUMBER },
+                                        fat_g: { type: Type.NUMBER }
                                     }, 
                                     required: ["name", "estimated_calories", "estimated_quantity_g", "protein_g", "carbs_g", "fat_g"] 
                                 } 
@@ -632,12 +638,30 @@
                         required: ["foodItems"] 
                     } 
                 }
-            };
-            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (!response.ok) throw new Error((await response.json()).error.message);
-            return JSON.parse((await response.json()).candidates?.[0]?.content?.parts?.[0]?.text).foodItems;
+            });
+            return JSON.parse(response.text).foodItems;
         }
         
+        async function callGeminiTextAPI(mealData) {
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyDY7w-0oOXrExmPMWAlwhoFbjibAz1PXNE" });
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-preview-09-2025',
+                contents: [{ role: "user", parts: [{ text: `食物清單：${JSON.stringify(mealData)}。請用繁體中文給出一段簡短的營養總結和改進建議。` }] }],
+                config: { 
+                    systemInstruction: "You are a friendly nutritionist. Output plain text.",
+                    responseMimeType: "text/plain" 
+                }
+            });
+            return response.text.trim();
+        }
+        
+        window.getNutritionalAdvice = async function() {
+             if (!navigator.onLine) return showMessage('Offline mode', true);
+             const btn = document.getElementById('getAdviceButton'); const div = document.getElementById('adviceResult');
+             btn.disabled = true; div.classList.remove('hidden'); div.innerHTML = '<span class="animate-pulse">AI thinking...</span>';
+             try { div.innerHTML = (await callGeminiTextAPI(currentMealData)).replace(/\n/g, '<br>'); } catch (error) { div.textContent = "Advice unavailable"; } finally { btn.disabled = false; }
+        }
+
         window.previewImage = async function(event) { 
             const input = event.target;
             if (input.files && input.files[0]) {
@@ -975,6 +999,31 @@
         }
         
         // (CopyUserData / DeleteAllUserData functions remain same as previous context for robustness)
+        window.overwriteWithAnonymousData = async () => { document.getElementById('mergeModal').classList.add('hidden'); showMessage('Overwriting cloud data...', false); try { const cred = await signInWithCredential(auth, googleCredentialForMerge); await deleteAllUserData(cred.user.uid); await copyUserData(anonymousUserIdBeforeSignIn, cred.user.uid); window.location.reload(); } catch(e) { showMessage('Failed', true); } }
+        window.discardAnonymousData = async () => { document.getElementById('mergeModal').classList.add('hidden'); await signInWithCredential(auth, googleCredentialForMerge); window.location.reload(); }
+        async function deleteAllUserData(uid) {
+            if (!db || !uid) return;
+            const batch = writeBatch(db);
+            (await getDocs(collection(db, `/artifacts/${appId}/users/${uid}/Meals`))).forEach(d => batch.delete(d.ref));
+            (await getDocs(collection(db, `/artifacts/${appId}/users/${uid}/FoodItems`))).forEach(d => batch.delete(d.ref));
+            (await getDocs(collection(db, `/artifacts/${appId}/users/${uid}/WeightLogs`))).forEach(d => batch.delete(d.ref));
+            batch.delete(doc(db, `/artifacts/${appId}/users/${uid}/Profile`, 'data'));
+            await batch.commit();
+        }
+        async function copyUserData(fromUid, toUid) {
+             if (!db || !fromUid || !toUid) return;
+             const batch = writeBatch(db);
+             const mealIdMap = new Map();
+             const pSnap = await getDoc(doc(db, `/artifacts/${appId}/users/${fromUid}/Profile`, 'data'));
+             if(pSnap.exists()) batch.set(doc(db, `/artifacts/${appId}/users/${toUid}/Profile`, 'data'), pSnap.data());
+             const mSnaps = await getDocs(collection(db, `/artifacts/${appId}/users/${fromUid}/Meals`));
+             mSnaps.forEach(md => { const newData = md.data(); newData.UserId = toUid; const newRef = doc(collection(db, `/artifacts/${appId}/users/${toUid}/Meals`)); batch.set(newRef, newData); mealIdMap.set(md.id, newRef.id); });
+             const iSnaps = await getDocs(collection(db, `/artifacts/${appId}/users/${fromUid}/FoodItems`));
+             iSnaps.forEach(id => { const newData = id.data(); newData.UserId = toUid; if(newData.MealId && mealIdMap.has(newData.MealId)) newData.MealId = mealIdMap.get(newData.MealId); batch.set(doc(collection(db, `/artifacts/${appId}/users/${toUid}/FoodItems`)), newData); });
+             const wSnaps = await getDocs(collection(db, `/artifacts/${appId}/users/${fromUid}/WeightLogs`));
+             wSnaps.forEach(wd => { const newData = wd.data(); newData.UserId = toUid; batch.set(doc(collection(db, `/artifacts/${appId}/users/${toUid}/WeightLogs`)), newData); });
+             await batch.commit();
+        }
     </script>
 
     <script>
