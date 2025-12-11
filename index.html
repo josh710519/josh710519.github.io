@@ -104,15 +104,16 @@
             <div class="flex justify-between items-center">
                 <h1 class="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-1">
                     Foodcc
-                    <span id="proBadge" class="hidden text-[10px] bg-black text-white px-2 py-0.5 rounded-full ml-1">PRO</span>
                 </h1>
                 <div class="flex items-center gap-3">
+                    <!-- Auth Section: 顯示 Google 登入按鈕 (如果為訪客) -->
+                    <div id="authSection" class="flex items-center">
+                        <!-- 動態插入 -->
+                    </div>
+                    
                     <button onclick="showProfileModal(true)" class="btn-press w-9 h-9 flex items-center justify-center bg-gray-50 rounded-full text-gray-600 border border-gray-100 relative">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                        <span id="freeLimitBadge" class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full text-white text-[9px] flex items-center justify-center font-bold hidden">5</span>
                     </button>
-                    <!-- 隱藏的 Auth Section 邏輯 -->
-                    <div id="authSection" class="hidden"></div>
                 </div>
             </div>
         </header>
@@ -275,7 +276,6 @@
 
             <!-- VIEW: 隱藏的功能 (體重, 設定) 保留邏輯但不主動顯示 -->
             <div id="hidden-stuff" class="hidden">
-                 <div id="adBannerContainer"></div> <!-- 隱藏廣告容器，保留邏輯 -->
                  <div class="relative h-32 w-full"><canvas id="weightChart"></canvas></div> <!-- 隱藏體重圖表，只在 modal 顯示 -->
             </div>
 
@@ -318,29 +318,6 @@
             </div>
         </div>
 
-        <!-- 額度已滿彈窗 (Limit Reached Modal) -->
-        <div id="limitReachedModal" class="fixed inset-0 z-[70] flex items-center justify-center p-4 modal-backdrop hidden">
-            <div class="bg-white w-full max-w-sm p-6 rounded-[2rem] shadow-2xl text-center transform transition-all">
-                <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-8 h-8 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                </div>
-                <h3 class="text-xl font-bold text-gray-900 mb-2">Daily Limit Reached</h3>
-                <p class="text-sm text-gray-500 mb-6">You've used your 5 free AI scans for today.</p>
-                <div class="space-y-3">
-                    <button onclick="watchAdForReward()" class="btn-press w-full py-3.5 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg">Watch Ad (+5 Scans)</button>
-                    <button onclick="showProfileModal(true); document.getElementById('limitReachedModal').classList.add('hidden')" class="btn-press w-full py-3.5 bg-gray-100 text-gray-900 rounded-2xl font-bold">Upgrade to PRO</button>
-                    <button onclick="document.getElementById('limitReachedModal').classList.add('hidden')" class="w-full py-2 text-gray-400 text-xs font-bold">Cancel</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 模擬廣告播放覆蓋層 -->
-        <div id="adOverlay" class="fixed inset-0 z-[100] bg-black hidden flex flex-col items-center justify-center text-white">
-            <div class="absolute top-4 right-4 bg-gray-800/80 px-3 py-1 rounded-full text-xs font-bold" id="adTimer">Ad 3s</div>
-            <div class="text-center animate-pulse"><h2 class="text-2xl font-black mb-2">ADVERTISEMENT</h2></div>
-            <div class="w-64 h-2 bg-gray-800 rounded-full mt-8 overflow-hidden"><div id="adProgressBar" class="h-full bg-yellow-500 w-0 transition-all duration-[3000ms] ease-linear"></div></div>
-        </div>
-
         <!-- 記錄體重彈窗 -->
         <div id="weightModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
             <div class="bg-white w-full max-w-xs p-6 rounded-[2rem] shadow-2xl transform transition-all">
@@ -365,32 +342,27 @@
     <!-- 個人資料彈窗 -->
     <div id="profileModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
         <div class="bg-white w-full max-w-sm p-6 rounded-[2rem] shadow-2xl transform transition-all max-h-[85vh] flex flex-col">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-bold text-gray-900">Settings</h2>
+            <div class="flex items-center justify-between mb-2">
+                <div>
+                    <h2 class="text-xl font-bold text-gray-900">Settings</h2>
+                    <p id="authStatusText" class="text-xs font-bold text-gray-400">Guest Mode</p>
+                </div>
                 <button onclick="hideProfileModal()" id="closeProfileModalButton" class="p-2 bg-gray-50 rounded-full text-gray-400 hover:bg-gray-100 transition">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
             
             <div class="overflow-y-auto no-scrollbar flex-grow space-y-6 py-2">
-                <!-- PRO Upgrade Section -->
-                <div id="proUpgradeSection" class="bg-gray-900 rounded-2xl p-5 text-white shadow-lg">
-                    <div class="flex justify-between items-start mb-2">
-                        <h3 class="font-bold text-lg text-white">Upgrade PRO</h3>
-                        <span id="proStatusText" class="text-[10px] bg-white/20 px-2 py-0.5 rounded text-gray-300">FREE</span>
+                <!-- Google 登入區塊 (現在置頂顯示) -->
+                <div id="profileLoginSection" class="bg-blue-600 rounded-2xl p-5 text-white shadow-lg shadow-blue-200">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="bg-white p-1.5 rounded-full"><svg class="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.26.81-.58z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg></div>
+                        <span class="font-bold">Sync & Backup</span>
                     </div>
-                    <p class="text-xs text-gray-400 mb-4">Unlock unlimited AI scans & remove ads.</p>
-                    <div id="proInputContainer" class="flex gap-2">
-                        <input type="text" id="proCodeInput" placeholder="Code" class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-white w-full uppercase">
-                        <button onclick="activatePro()" class="bg-white text-black px-3 py-2 rounded-lg font-bold text-sm whitespace-nowrap">Activate</button>
-                    </div>
-                </div>
-
-                <div id="profileLoginSection" class="bg-blue-50 rounded-2xl p-5 text-gray-800 border border-blue-100 hidden">
-                    <p class="text-sm font-bold mb-3">Sign in to sync data</p>
+                    <p class="text-xs text-blue-100 mb-4 opacity-90">Sign in to save your data permanently and access it from any device.</p>
                     <button id="googleSignInButton" type="button" onclick="signInWithGoogle()" 
-                            class="btn-press w-full py-3 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition flex items-center justify-center gap-2">
-                        Google Sign In
+                            class="btn-press w-full py-3.5 px-4 rounded-xl font-bold text-blue-600 bg-white hover:bg-blue-50 transition flex items-center justify-center gap-2 shadow-sm">
+                        Sign In with Google
                     </button>
                 </div>
 
@@ -476,12 +448,6 @@
         
         // Macros (New)
         let todaysProtein = 0, todaysCarbs = 0, todaysFat = 0;
-        
-        // Monetization Vars
-        const DAILY_FREE_LIMIT = 5;
-        let userIsPro = false;
-        let dailyScansUsed = 0;
-        let maxDailyScans = DAILY_FREE_LIMIT;
 
         setLogLevel('Debug');
 
@@ -688,7 +654,6 @@
         
         window.analyzeFood = async function() {
             if (!navigator.onLine) return showMessage('Offline mode enabled', true);
-            if (!userIsPro && dailyScansUsed >= maxDailyScans) { document.getElementById('limitReachedModal').classList.remove('hidden'); return; }
 
             const btn = document.getElementById('analyzeButton'); const resultDiv = document.getElementById('analysisResult');
             btn.disabled = true; btn.textContent = "Analyzing..."; 
@@ -716,12 +681,6 @@
                     </div>`).join('');
                     
                 updateSelectedMealData(); document.getElementById('saveButton').disabled = false; 
-                
-                if (!userIsPro) {
-                    dailyScansUsed++;
-                    updateDashboardUI();
-                    setDoc(doc(db, `/artifacts/${appId}/users/${userId}/Profile`, 'data'), { dailyScansUsed: dailyScansUsed }, { merge: true });
-                }
                 
                 document.getElementById('imagePreviewContainer').classList.add('hidden');
             } catch (error) { resultDiv.innerHTML = `<p class="text-red-500 text-sm p-4 bg-red-50 rounded-xl">Error: ${getFriendlyErrorMessage(error)}</p>`; }
@@ -770,20 +729,6 @@
             document.getElementById('progressProtein').style.width = `${Math.min(100, (todaysProtein/pTarget)*100)}%`;
             document.getElementById('progressCarbs').style.width = `${Math.min(100, (todaysCarbs/cTarget)*100)}%`;
             document.getElementById('progressFat').style.width = `${Math.min(100, (todaysFat/fTarget)*100)}%`;
-
-            // Monetization UI
-            if (userIsPro) {
-                document.getElementById('proBadge').classList.remove('hidden');
-                document.getElementById('freeLimitBadge').classList.add('hidden');
-                document.getElementById('proUpgradeSection').classList.add('hidden');
-                document.getElementById('proStatusText').textContent = 'PRO';
-                document.getElementById('proStatusText').className = "text-[10px] bg-white text-black px-2 py-0.5 rounded font-bold";
-            } else {
-                document.getElementById('proBadge').classList.add('hidden');
-                document.getElementById('freeLimitBadge').classList.remove('hidden');
-                document.getElementById('freeLimitBadge').textContent = (maxDailyScans - dailyScansUsed) > 0 ? (maxDailyScans - dailyScansUsed) : 0;
-                document.getElementById('proUpgradeSection').classList.remove('hidden');
-            }
         }
         
         window.saveMeal = async function() {
@@ -846,21 +791,10 @@
                     ['nickname','gender','age','height','weight','activityLevel'].forEach(k => document.getElementById(k).value = userProfile[k] || (k==='gender'?'male':''));
                     document.getElementById('targetWeight').value = userProfile.targetWeight || '';
                     dailyCalorieTarget = calculateTDEE(userProfile);
-                    userIsPro = !!userProfile.isPro;
-                    
-                    const today = new Date().toDateString();
-                    if (userProfile.lastScanDate !== today) {
-                        dailyScansUsed = 0;
-                        setDoc(doc(db, `/artifacts/${appId}/users/${user.uid}/Profile`, 'data'), { lastScanDate: today, dailyScansUsed: 0 }, { merge: true });
-                    } else {
-                        dailyScansUsed = userProfile.dailyScansUsed || 0;
-                    }
-                    maxDailyScans = userProfile.maxDailyScans || DAILY_FREE_LIMIT;
-
                 } else {
                     document.getElementById('nickname').value = user.displayName || '';
                     if (user.isAnonymous) showProfileModal(true);
-                    setDoc(doc(db, `/artifacts/${appId}/users/${user.uid}/Profile`, 'data'), { lastScanDate: new Date().toDateString(), dailyScansUsed: 0, maxDailyScans: DAILY_FREE_LIMIT }, { merge: true });
+                    setDoc(doc(db, `/artifacts/${appId}/users/${user.uid}/Profile`, 'data'), { lastScanDate: new Date().toDateString() }, { merge: true });
                 }
                 updateDashboardUI();
             } catch (error) { console.error(error); }
@@ -961,37 +895,26 @@
         }
         window.signOutUser = async () => { await signOut(auth); window.location.reload(); }
         window.deleteUserAccount = async () => { if(confirm("Delete account?")) { await deleteUser(auth.currentUser); window.location.reload(); } }
+        
         function updateAuthUI(user) {
+            // Update Modal UI
             if (user && !user.isAnonymous) {
-                document.getElementById('authSection').innerHTML = ''; // Hide simple text
-                document.getElementById('profileLoginSection').classList.add('hidden'); document.getElementById('accountActions').classList.remove('hidden');
+                document.getElementById('authStatusText').textContent = user.displayName || 'Signed In';
+                document.getElementById('profileLoginSection').classList.add('hidden');
+                document.getElementById('accountActions').classList.remove('hidden');
+                
+                // Header UI: Show Avatar/Icon
+                document.getElementById('authSection').innerHTML = `<div class="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-xs">${(user.displayName||'U').charAt(0).toUpperCase()}</div>`;
             } else {
-                document.getElementById('profileLoginSection').classList.remove('hidden'); document.getElementById('accountActions').classList.add('hidden');
+                document.getElementById('authStatusText').textContent = 'Guest Mode';
+                document.getElementById('profileLoginSection').classList.remove('hidden');
+                document.getElementById('accountActions').classList.add('hidden');
+                
+                // Header UI: Show "Sign In" Button
+                document.getElementById('authSection').innerHTML = `<button onclick="signInWithGoogle()" class="text-blue-600 font-bold text-xs mr-3 bg-blue-50 px-3 py-1.5 rounded-full">Sign In</button>`;
             }
         }
         
-        // Monetization Wrappers
-        window.watchAdForReward = async function() {
-            document.getElementById('limitReachedModal').classList.add('hidden');
-            document.getElementById('adOverlay').classList.remove('hidden');
-            document.getElementById('adProgressBar').style.width = '100%';
-            setTimeout(() => {
-                document.getElementById('adOverlay').classList.add('hidden');
-                maxDailyScans += 5;
-                updateDashboardUI();
-                setDoc(doc(db, `/artifacts/${appId}/users/${userId}/Profile`, 'data'), { maxDailyScans: maxDailyScans }, { merge: true });
-                showMessage('+5 Free Scans', false);
-            }, 3000);
-        }
-        
-        window.activatePro = async function() {
-            if (document.getElementById('proCodeInput').value.trim().toUpperCase() === 'FOODCC2025') {
-                userIsPro = true; updateDashboardUI();
-                await setDoc(doc(db, `/artifacts/${appId}/users/${userId}/Profile`, 'data'), { isPro: true }, { merge: true });
-                showMessage('PRO Activated', false);
-            }
-        }
-
         window.onload = initFirebase;
         async function initFirebase() {
             updateOnlineStatus(); 
